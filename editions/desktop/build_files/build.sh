@@ -52,6 +52,17 @@ set_osr AKKOS_VERSION "${AKKOS_VERSION}"
 set_osr AKKOS_BASE_IMAGE "${BASE_IMAGE}"
 echo "Akko's OS release ${FEDORA_VERSION} (Desktop)" > /etc/system-release
 echo akkos > /etc/hostname
+# Padrões de idioma e teclado (português do Brasil). O instalador sobrescreve
+# se a pessoa escolher outro idioma/teclado.
+echo 'LANG=pt_BR.UTF-8' > /etc/locale.conf
+echo 'KEYMAP=br-abnt2' > /etc/vconsole.conf
+install -Dm644 /dev/stdin /etc/X11/xorg.conf.d/00-keyboard.conf <<'EOF'
+Section "InputClass"
+        Identifier "system-keyboard"
+        MatchIsKeyboard "on"
+        Option "XkbLayout" "br"
+EndSection
+EOF
 # padrão de raiz para "bootc install" e geradores de disco/ISO
 install -Dm644 /dev/stdin /usr/lib/bootc/install/20-akkos.toml <<'EOF'
 [install.filesystem.root]
@@ -122,6 +133,20 @@ for d in /usr/share/plasma/look-and-feel/*/contents/defaults; do
     fi
 done
 
+# Tela de login (SDDM): a base aponta para um tema que pode não existir
+# ("01-breeze-fedora"), e aí o SDDM cai no tema embutido. Usamos o primeiro
+# tema existente desta lista.
+for th in 01-breeze-fedora breeze; do
+    if [ -f "/usr/share/sddm/themes/$th/theme.conf" ] || [ -f "/usr/share/sddm/themes/$th/metadata.desktop" ]; then
+        install -Dm644 /dev/stdin /etc/sddm.conf.d/zz-akkos.conf <<EOF
+[Theme]
+Current=$th
+EOF
+        echo "tema do SDDM: $th"
+        break
+    fi
+done
+ls /usr/share/sddm/themes/ || true
 # Tela de login (SDDM): fundo próprio no tema em uso
 for t in /usr/share/sddm/themes/*/; do
     if [ -f "$t/theme.conf" ]; then

@@ -225,7 +225,7 @@ def main():
             checks = {
                 "os_release": ("grep -E '^(NAME|PRETTY_NAME|VARIANT)=' /usr/lib/os-release", r"NAME=\"Akko's OS\""),
                 "akkos_cli": ("akkos version", r"Akko's OS Desktop"),
-                "imagem_atualizacao": ("sudo -n bootc status 2>&1 | head -20 || bootc status 2>&1 | head -20", r"ghcr\.io/akkotfpn/akkos"),
+                "imagem_atualizacao": ("rpm-ostree status --booted 2>&1 | head -12", r"ghcr\.io/akkotfpn/akkos"),
                 "idioma": ("localectl status | head -3; echo LANG=$LANG", r"pt_BR"),
                 "hostname": ("hostnamectl hostname 2>/dev/null || hostname", r"(?m)^akkos\r?$"),
                 "papel_de_parede": ("ls /usr/share/wallpapers/AkkoOS/contents/images_dark/", r"3840x2160\.png"),
@@ -237,6 +237,7 @@ def main():
             # Diagnóstico (não reprova o teste): ajuda a entender a sessão gráfica
             diagnostics = {
                 "diag_alvo_boot": "systemctl get-default",
+                "diag_locale": "cat /etc/locale.conf /etc/vconsole.conf 2>&1; cat /etc/sddm.conf.d/zz-akkos.conf 2>&1",
                 "diag_display_manager": "systemctl status display-manager.service --no-pager 2>&1 | head -15",
                 "diag_sessoes": "loginctl list-sessions --no-legend",
                 "diag_falhas": "systemctl --failed --no-legend --no-pager | head -15",
