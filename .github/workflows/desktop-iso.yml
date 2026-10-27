@@ -19,9 +19,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Em fila: uma ISO em andamento nunca é cortada no meio por outra execução.
 concurrency:
   group: ${{ github.workflow }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   IMAGE_REGISTRY: ghcr.io/akkotfpn

@@ -9,6 +9,7 @@ on:
     branches: [main]
     paths:
       - "editions/desktop/**"
+      - "!editions/desktop/disk_config/**"
       - "branding/**"
       - "scripts/build-image.sh"
       - "scripts/ci-run.sh"
@@ -17,6 +18,7 @@ on:
     branches: [main]
     paths:
       - "editions/desktop/**"
+      - "!editions/desktop/disk_config/**"
       - "branding/**"
       - "scripts/build-image.sh"
       - "scripts/ci-run.sh"
