@@ -13,6 +13,7 @@ image="${1:?imagem}"
 config="${2:?config .toml}"
 out="${3:?pasta de saída}"
 bib="${BIB_IMAGE:-quay.io/centos-bootc/bootc-image-builder:latest}"
+rootfs="${ROOTFS:-btrfs}"   # a base (Bazzite/Fedora Atomic) usa Btrfs na raiz
 
 [ "$(id -u)" = 0 ] || { echo "rode como root (sudo)" >&2; exit 1; }
 
@@ -31,7 +32,7 @@ podman run --rm --privileged \
     --volume "$(realpath "$out")":/output \
     --volume "$cfg":/config.toml:ro \
     "$bib" \
-    build --output /output --use-librepo=True --type anaconda-iso \
+    build --output /output --use-librepo=True --type anaconda-iso --rootfs "$rootfs" \
     ${CHOWN:+--chown "$CHOWN"} \
     "$image"
 
