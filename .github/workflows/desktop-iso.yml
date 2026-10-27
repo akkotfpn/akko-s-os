@@ -55,7 +55,8 @@ jobs:
 
       - name: Gerar ISO
         run: |
-          sudo CHOWN="$(id -u):$(id -g)" scripts/build-iso.sh \
+          scripts/ci-run.sh "ISO ${{ matrix.variant }}" --notice 5 \
+            sudo CHOWN="$(id -u):$(id -g)" scripts/build-iso.sh \
             "$IMAGE_REGISTRY/${{ matrix.variant }}:latest" \
             editions/desktop/disk_config/iso.toml "$OUT"
           iso=$(find "$OUT" -name '*.iso' | head -1)
@@ -115,7 +116,8 @@ jobs:
 
       - name: Gerar ISO de teste (instalação automática)
         run: |
-          sudo CHOWN="$(id -u):$(id -g)" scripts/build-iso.sh \
+          scripts/ci-run.sh "ISO de teste" --notice 5 \
+            sudo CHOWN="$(id -u):$(id -g)" scripts/build-iso.sh \
             "$IMAGE_REGISTRY/akkos:latest" tests/desktop/iso-unattended.toml "$W/iso"
           # libera o espaço da imagem antes de instalar
           sudo podman rmi -a -f || true
@@ -124,12 +126,17 @@ jobs:
       - name: Instalar, bootar e verificar
         run: |
           iso=$(find "$W/iso" -name '*.iso' | head -1)
-          python3 tests/desktop/qemu_install_test.py "$iso" "$W/resultado"
+          scripts/ci-run.sh "Instalação na VM" python3 tests/desktop/qemu_install_test.py "$iso" "$W/resultado"
 
       - name: Resumo
         if: always()
         run: |
           f="$W/resultado/resultado.json"
+          python3 tests/desktop/annotate_results.py "$f" || true
+          # trecho final do serial do primeiro boot, pra diagnóstico
+          for s in "$W"/resultado/serial-*.log; do
+            [ -f "$s" ] && echo "::notice title=Serial $(basename "$s")::$(tail -c 4000 "$s" | tr -d '\r' | sed -e 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
+          done
           if [ -f "$f" ]; then
             {
               echo '### Resultado do teste de instalação'

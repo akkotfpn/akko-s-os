@@ -11,6 +11,7 @@ on:
       - "editions/desktop/**"
       - "branding/**"
       - "scripts/build-image.sh"
+      - "scripts/ci-run.sh"
       - ".github/workflows/desktop-image.yml"
   pull_request:
     branches: [main]
@@ -18,6 +19,7 @@ on:
       - "editions/desktop/**"
       - "branding/**"
       - "scripts/build-image.sh"
+      - "scripts/ci-run.sh"
       - ".github/workflows/desktop-image.yml"
   schedule:
     - cron: "17 6 * * *"   # 03:17 em Brasília
@@ -52,7 +54,7 @@ jobs:
         run: echo "AKKOS_VERSION=$(date -u +%Y.%m.%d).${{ github.run_number }}" >> "$GITHUB_ENV"
 
       - name: Construir e verificar
-        run: scripts/build-image.sh "${{ matrix.variant }}"
+        run: scripts/ci-run.sh "Build ${{ matrix.variant }}" --notice 25 scripts/build-image.sh "${{ matrix.variant }}"
 
       - name: Publicar no ghcr.io
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
