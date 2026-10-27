@@ -219,26 +219,53 @@ def main():
         logged = vm.wait_for(r"\$ ", 90, mark)
         step("login_serial", logged)
         if logged:
+            # Cada verificação: (comando, regex esperada na SAÍDA). Os marcadores
+            # são montados de forma que o texto "<<<nome" só exista na saída,
+            # nunca no comando ecoado pelo terminal.
             checks = {
                 "os_release": ("grep -E '^(NAME|PRETTY_NAME|VARIANT)=' /usr/lib/os-release", r"NAME=\"Akko's OS\""),
                 "akkos_cli": ("akkos version", r"Akko's OS Desktop"),
-                "imagem_atualizacao": ("bootc status 2>&1 | head -20", r"ghcr\.io/akkotfpn/akkos"),
+                "imagem_atualizacao": ("sudo -n bootc status 2>&1 | head -20 || bootc status 2>&1 | head -20", r"ghcr\.io/akkotfpn/akkos"),
                 "idioma": ("localectl status | head -3; echo LANG=$LANG", r"pt_BR"),
+                "hostname": ("hostnamectl hostname 2>/dev/null || hostname", r"(?m)^akkos\r?$"),
                 "papel_de_parede": ("ls /usr/share/wallpapers/AkkoOS/contents/images_dark/", r"3840x2160\.png"),
-                "sessao_grafica": ("systemctl is-active display-manager.service; loginctl list-sessions --no-legend", r"\bactive\b"),
+                "sessao_grafica": ("systemctl is-active display-manager.service", r"(?m)^active\r?$"),
                 "gpu": ("akkos gpu", r"Placas de vídeo"),
-                "firewall": ("systemctl is-active firewalld", r"\bactive\b"),
+                "firewall": ("systemctl is-active firewalld", r"(?m)^active\r?$"),
                 "flatpak": ("flatpak remotes --columns=name", r"flathub"),
             }
-            for name, (cmd, expect) in checks.items():
+            # Diagnóstico (não reprova o teste): ajuda a entender a sessão gráfica
+            diagnostics = {
+                "diag_alvo_boot": "systemctl get-default",
+                "diag_display_manager": "systemctl status display-manager.service --no-pager 2>&1 | head -15",
+                "diag_sessoes": "loginctl list-sessions --no-legend",
+                "diag_falhas": "systemctl --failed --no-legend --no-pager | head -15",
+                "diag_dm_journal": "journalctl -b --no-pager -p warning -u sddm -u gdm -u plasmalogin -u display-manager 2>&1 | tail -20",
+            }
+
+            def run_check(name, cmd):
                 mark = len(vm.buf)
-                vm.send(f"echo '<<<{name}'; {cmd}; echo '>>>{name}'\n")
+                vm.send(f"echo '<<<''{name}'; {cmd}; echo '>>>''{name}'\n")
                 vm.wait_for(re.escape(f">>>{name}") + r"\r?\n", 120, mark)
                 seg = vm.buf[mark:].decode("utf-8", "replace")
-                body = seg.split(f"<<<{name}", 1)[-1].split(f">>>{name}", 1)[0]
+                seg = re.sub(r"\x1b\][^\x1b\x07]*(\x1b\\|\x07)", "", seg)   # sequências OSC do shell
+                seg = re.sub(r"\x1b\[[0-9;:?=]*[A-Za-z]", "", seg)            # cores e cursor
+                start = seg.find(f"<<<{name}")
+                end = seg.find(f">>>{name}", start + 1)
+                if start < 0 or end < 0:
+                    return seg[-1500:]
+                return seg[start + len(name) + 3:end].strip()
+
+            for name, (cmd, expect) in checks.items():
+                body = run_check(name, cmd)
                 passed = re.search(expect, body) is not None
-                result["verificacoes"][name] = {"ok": passed, "comando": cmd, "saida": body.strip()[-1500:]}
-                print(f"--- {name}: {'OK' if passed else 'FALHOU'}\n{body.strip()}\n", flush=True)
+                result["verificacoes"][name] = {"ok": passed, "comando": cmd, "saida": body[-1500:]}
+                print(f"--- {name}: {'OK' if passed else 'FALHOU'}\n{body}\n", flush=True)
+            result["diagnostico"] = {}
+            for name, cmd in diagnostics.items():
+                body = run_check(name, cmd)
+                result["diagnostico"][name] = body[-1500:]
+                print(f"--- {name}\n{body}\n", flush=True)
 
         time.sleep(60)   # tempo pra sessão gráfica aparecer
         vm.screenshot("sessao-grafica")

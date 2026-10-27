@@ -51,6 +51,12 @@ set_osr AKKOS_EDITION "desktop"
 set_osr AKKOS_VERSION "${AKKOS_VERSION}"
 set_osr AKKOS_BASE_IMAGE "${BASE_IMAGE}"
 echo "Akko's OS release ${FEDORA_VERSION} (Desktop)" > /etc/system-release
+echo akkos > /etc/hostname
+# padrão de raiz para "bootc install" e geradores de disco/ISO
+install -Dm644 /dev/stdin /usr/lib/bootc/install/20-akkos.toml <<'EOF'
+[install.filesystem.root]
+type = "btrfs"
+EOF
 cat "$OSR"
 
 log "4/6 Informações da imagem (usadas pelas ferramentas de atualização da base)"
@@ -132,5 +138,5 @@ log "6/6 Ferramenta akkos e limpeza"
 chmod 755 /usr/bin/akkos
 /usr/bin/akkos version
 dnf5 clean all
-rm -rf /var/lib/dnf
+rm -rf /var/lib/dnf /run/dnf
 log "Build concluído"

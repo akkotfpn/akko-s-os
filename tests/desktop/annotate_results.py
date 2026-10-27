@@ -24,12 +24,12 @@ def main():
     level = "notice" if r.get("sucesso") else "error"
     print(f"::{level} title=Teste de instalação - resumo::{esc(chr(10).join(lines))}")
 
-    # saída de cada verificação (até 10 anotações por nível por etapa)
-    detail = []
+    # uma anotação por verificação (limite ~4 KB cada; até 10 por nível)
     for name, v in r.get("verificacoes", {}).items():
-        detail.append(f"== {name} ({'ok' if v['ok'] else 'FALHOU'}) $ {v['comando']}\n{v['saida'][-600:]}")
-    if detail:
-        print(f"::notice title=Teste de instalação - saídas::{esc(chr(10).join(detail))[:60000]}")
+        body = f"$ {v['comando']}\n{v['saida'][-3000:]}"
+        print(f"::notice title={name} ({'ok' if v['ok'] else 'FALHOU'})::{esc(body)}")
+    for name, out in r.get("diagnostico", {}).items():
+        print(f"::warning title={name}::{esc(out[-3000:])}")
     return 0
 
 
