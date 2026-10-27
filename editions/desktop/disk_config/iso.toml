@@ -13,6 +13,7 @@ contents = """
 lang pt_BR.UTF-8
 keyboard --vckeymap=br-abnt2 --xlayouts=br
 timezone America/Sao_Paulo --utc
+network --hostname=akkos
 
 %post --erroronfail
 bootc switch --mutate-in-place --transport registry @IMAGE_REF@

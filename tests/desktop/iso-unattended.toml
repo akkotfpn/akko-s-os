@@ -14,7 +14,7 @@ timezone America/Sao_Paulo --utc
 zerombr
 clearpart --all --initlabel --disklabel=gpt
 autopart --noswap --type=btrfs
-network --bootproto=dhcp --device=link --activate --onboot=on
+network --bootproto=dhcp --device=link --activate --onboot=on --hostname=akkos
 user --name=akkoteste --password=akkos-ci-teste --plaintext --groups=wheel
 rootpw --lock
 # instalação em modo texto deixaria o boot em multi-user.target; queremos a sessão gráfica
