@@ -26,8 +26,12 @@ echo "==> Baixando $image"
 podman pull -q "$image"
 
 # Em sistemas com AppArmor (Ubuntu), o osbuild precisa montar dentro do container.
+# BIB_PODMAN_OPTS permite forçar opções extras (o CI usa).
 extra=()
 [ -d /sys/kernel/security/apparmor ] && extra+=(--security-opt apparmor=unconfined)
+# shellcheck disable=SC2206
+[ -n "${BIB_PODMAN_OPTS:-}" ] && extra+=($BIB_PODMAN_OPTS)
+echo "==> Opções extras do podman: ${extra[*]:-nenhuma}"
 
 echo "==> Gerando a ISO com $bib"
 podman run --rm --privileged \

@@ -34,7 +34,7 @@ jobs:
       github.event_name == 'workflow_dispatch' || github.event_name == 'push' ||
       (github.event.workflow_run.conclusion == 'success' &&
        contains(fromJSON('["push","workflow_dispatch"]'), github.event.workflow_run.event))
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: read
@@ -69,7 +69,7 @@ jobs:
       - name: Gerar ISO
         run: |
           scripts/ci-run.sh "ISO ${{ matrix.variant }}" --notice 5 \
-            sudo CHOWN="$(id -u):$(id -g)" scripts/build-iso.sh \
+            sudo CHOWN="$(id -u):$(id -g)" BIB_PODMAN_OPTS="--security-opt apparmor=unconfined" scripts/build-iso.sh \
             "$IMAGE_REGISTRY/${{ matrix.variant }}:latest" \
             editions/desktop/disk_config/iso.toml "$OUT"
           iso=$(find "$OUT" -name '*.iso' | head -1)
@@ -77,6 +77,20 @@ jobs:
           sudo mv "$iso" "$final"
           (cd "$OUT" && sha256sum "$(basename "$final")" | sudo tee "$(basename "$final").sha256")
           echo "### ISO ${{ matrix.variant }}: $(du -h "$final" | cut -f1)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Diagnóstico (falha)
+        if: failure()
+        run: |
+          {
+            echo "kernel: $(uname -r)"
+            echo "apparmor_restrict_unprivileged_userns=$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo n/a)"
+            echo "apparmor securityfs: $(ls -d /sys/kernel/security/apparmor 2>/dev/null || echo ausente)"
+            sudo aa-status 2>/dev/null | head -5
+            echo "--- dmesg (apparmor/denied/mount):"
+            sudo dmesg | grep -i -E 'apparmor|denied|mount' | tail -25
+          } > diag.txt 2>&1
+          cat diag.txt
+          echo "::warning title=Diagnóstico::$(tail -c 3500 diag.txt | sed -e 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
 
       - name: Enviar ISO
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -95,7 +109,7 @@ jobs:
       github.event_name == 'workflow_dispatch' || github.event_name == 'push' ||
       (github.event.workflow_run.conclusion == 'success' &&
        contains(fromJSON('["push","workflow_dispatch"]'), github.event.workflow_run.event))
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 180
     permissions:
       contents: read
@@ -134,11 +148,25 @@ jobs:
       - name: Gerar ISO de teste (instalação automática)
         run: |
           scripts/ci-run.sh "ISO de teste" --notice 5 \
-            sudo CHOWN="$(id -u):$(id -g)" scripts/build-iso.sh \
+            sudo CHOWN="$(id -u):$(id -g)" BIB_PODMAN_OPTS="--security-opt apparmor=unconfined" scripts/build-iso.sh \
             "$IMAGE_REGISTRY/akkos:latest" tests/desktop/iso-unattended.toml "$W/iso"
           # libera o espaço da imagem antes de instalar
           sudo podman rmi -a -f || true
           df -h / "$W"
+
+      - name: Diagnóstico (falha)
+        if: failure()
+        run: |
+          {
+            echo "kernel: $(uname -r)"
+            echo "apparmor_restrict_unprivileged_userns=$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo n/a)"
+            echo "apparmor securityfs: $(ls -d /sys/kernel/security/apparmor 2>/dev/null || echo ausente)"
+            sudo aa-status 2>/dev/null | head -5
+            echo "--- dmesg (apparmor/denied/mount):"
+            sudo dmesg | grep -i -E 'apparmor|denied|mount' | tail -25
+          } > diag.txt 2>&1
+          cat diag.txt
+          echo "::warning title=Diagnóstico::$(tail -c 3500 diag.txt | sed -e 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
 
       - name: Instalar, bootar e verificar
         run: |
