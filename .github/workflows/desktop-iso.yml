@@ -5,6 +5,14 @@ name: Desktop - ISO e teste de instalação
 # KVM, boota o disco instalado, entra pelo serial e confere o sistema.
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/build-iso.sh"
+      - "scripts/ci-run.sh"
+      - "editions/desktop/disk_config/**"
+      - "tests/desktop/**"
+      - ".github/workflows/desktop-iso.yml"
   workflow_run:
     workflows: ["Desktop - imagem"]
     types: [completed]
@@ -22,7 +30,7 @@ jobs:
   iso:
     name: ISO ${{ matrix.variant }}
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'workflow_dispatch' || github.event_name == 'push' ||
       (github.event.workflow_run.conclusion == 'success' &&
        contains(fromJSON('["push","workflow_dispatch"]'), github.event.workflow_run.event))
     runs-on: ubuntu-26.04
@@ -79,7 +87,7 @@ jobs:
   teste-instalacao:
     name: Teste de instalação (akkos, VM com KVM)
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'workflow_dispatch' || github.event_name == 'push' ||
       (github.event.workflow_run.conclusion == 'success' &&
        contains(fromJSON('["push","workflow_dispatch"]'), github.event.workflow_run.event))
     runs-on: ubuntu-26.04

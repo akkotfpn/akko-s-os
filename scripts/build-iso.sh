@@ -22,7 +22,7 @@ sed "s|@IMAGE_REF@|$image|g" "$config" > "$cfg"
 echo "==> Configuração usada:"; cat "$cfg"
 
 echo "==> Baixando $image"
-podman pull "$image"
+podman pull -q "$image"
 
 echo "==> Gerando a ISO com $bib"
 podman run --rm --privileged \
