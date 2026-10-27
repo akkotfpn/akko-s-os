@@ -58,6 +58,10 @@ jobs:
           sudo mkdir -p /etc/containers
           printf '[storage]\ndriver = "overlay"\nrunroot = "/run/containers/storage"\ngraphroot = "/var/lib/containers/storage"\n' | sudo tee /etc/containers/storage.conf
           echo "$TOKEN" | sudo podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+          # runner descartável: o osbuild usa namespaces de usuário, que o Ubuntu restringe via AppArmor
+          if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
           OUT=$([ -d /mnt ] && sudo mountpoint -q /mnt && echo /mnt/akkos-iso || echo "$PWD/saida")
           sudo mkdir -p "$OUT" && echo "OUT=$OUT" >> "$GITHUB_ENV"
           df -h / /mnt 2>/dev/null || true
@@ -120,6 +124,10 @@ jobs:
           sudo mkdir -p /etc/containers
           printf '[storage]\ndriver = "overlay"\nrunroot = "/run/containers/storage"\ngraphroot = "/var/lib/containers/storage"\n' | sudo tee /etc/containers/storage.conf
           echo "$TOKEN" | sudo podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+          # runner descartável: o osbuild usa namespaces de usuário, que o Ubuntu restringe via AppArmor
+          if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
           W=$([ -d /mnt ] && sudo mountpoint -q /mnt && echo /mnt/akkos-teste || echo "$PWD/teste")
           sudo mkdir -p "$W" && sudo chown "$(id -u):$(id -g)" "$W" && echo "W=$W" >> "$GITHUB_ENV"
 

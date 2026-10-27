@@ -25,9 +25,14 @@ echo "==> Configuração usada:"; cat "$cfg"
 echo "==> Baixando $image"
 podman pull -q "$image"
 
+# Em sistemas com AppArmor (Ubuntu), o osbuild precisa montar dentro do container.
+extra=()
+[ -d /sys/kernel/security/apparmor ] && extra+=(--security-opt apparmor=unconfined)
+
 echo "==> Gerando a ISO com $bib"
 podman run --rm --privileged \
     --security-opt label=type:unconfined_t \
+    "${extra[@]}" \
     --volume /var/lib/containers/storage:/var/lib/containers/storage \
     --volume "$(realpath "$out")":/output \
     --volume "$cfg":/config.toml:ro \

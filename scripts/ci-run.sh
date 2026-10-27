@@ -22,7 +22,7 @@ rc=${PIPESTATUS[0]}
 escape() { sed -e 's/%/%25/g' -e 's/\r/%0D/g' | sed ':a;N;$!ba;s/\n/%0A/g'; }
 
 useful() {   # tira ruído e corta pelo fim
-    grep -v -E 'Copying (blob|config)|Writing manifest|Getting image source|Storing signatures' "$log" |
+    grep -v -E 'Copying (blob|config)|Writing manifest|Getting image source|Storing signatures|PGP PUBLIC KEY|"gpgkeys"|Downloaded ' "$log" |
         tail -n "$1" | tail -c 3500
 }
 
