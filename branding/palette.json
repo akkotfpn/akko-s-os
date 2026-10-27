@@ -1,0 +1,28 @@
+{
+  "_comentario": "Fonte única das cores do Akko's OS. Scripts de branding e temas leem daqui.",
+  "brand": {
+    "cyan": "#22D3EE",
+    "indigo": "#6366F1",
+    "magenta": "#D946EF"
+  },
+  "dark": {
+    "background": "#0B1020",
+    "surface": "#141A2E",
+    "surface_alt": "#1C2440",
+    "text": "#E6E9F2",
+    "text_muted": "#8B93AD"
+  },
+  "light": {
+    "background": "#F5F7FB",
+    "surface": "#FFFFFF",
+    "surface_alt": "#E9EDF5",
+    "text": "#0F172A",
+    "text_muted": "#5B6478"
+  },
+  "status": {
+    "success": "#22C55E",
+    "warning": "#F59E0B",
+    "error": "#EF4444",
+    "info": "#38BDF8"
+  }
+}

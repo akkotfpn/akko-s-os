@@ -1,0 +1,34 @@
+# ISO de instalação do Akko's OS Desktop (bootc-image-builder, tipo anaconda-iso)
+#
+# Instalador INTERATIVO: o disco, as partições e a conta são escolhidos por
+# você na tela; nada é apagado sem confirmação. Idioma, teclado e fuso já vêm
+# em português do Brasil, mas dá pra trocar no próprio instalador.
+#
+# @IMAGE_REF@ é trocado pelo CI (ex.: ghcr.io/akkotfpn/akkos:latest) pra que o
+# sistema instalado receba as atualizações da nossa imagem.
+
+[customizations.installer.kickstart]
+contents = """
+lang pt_BR.UTF-8
+keyboard --vckeymap=br-abnt2 --xlayouts=br
+timezone America/Sao_Paulo --utc
+
+%post --erroronfail
+bootc switch --mutate-in-place --transport registry @IMAGE_REF@
+%end
+"""
+
+[customizations.installer.modules]
+enable = [
+  "org.fedoraproject.Anaconda.Modules.Storage",
+  "org.fedoraproject.Anaconda.Modules.Runtime",
+  "org.fedoraproject.Anaconda.Modules.Network",
+  "org.fedoraproject.Anaconda.Modules.Security",
+  "org.fedoraproject.Anaconda.Modules.Services",
+  "org.fedoraproject.Anaconda.Modules.Users",
+  "org.fedoraproject.Anaconda.Modules.Timezone",
+  "org.fedoraproject.Anaconda.Modules.Localization"
+]
+disable = [
+  "org.fedoraproject.Anaconda.Modules.Subscription"
+]

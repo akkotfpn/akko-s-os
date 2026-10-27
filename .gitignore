@@ -1,0 +1,11 @@
+# gerados pelo build da edição Server
+editions/server/src/
+editions/server/tools/
+editions/server/build/
+editions/server/out/
+# gerados pelos builds/testes locais da edição Desktop
+saida/
+teste/
+*.iso
+*.qcow2
+__pycache__/

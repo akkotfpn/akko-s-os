@@ -1,0 +1,77 @@
+name: Desktop - imagem
+
+# Constrói as imagens bootc do Akko's OS Desktop e publica em ghcr.io.
+# Roda a cada push na main (arquivos da edição Desktop), todo dia (pra pegar
+# atualizações de segurança da base) e sob demanda.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "editions/desktop/**"
+      - "branding/**"
+      - "scripts/build-image.sh"
+      - ".github/workflows/desktop-image.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "editions/desktop/**"
+      - "branding/**"
+      - "scripts/build-image.sh"
+      - ".github/workflows/desktop-image.yml"
+  schedule:
+    - cron: "17 6 * * *"   # 03:17 em Brasília
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_REGISTRY: ghcr.io/akkotfpn
+
+jobs:
+  build:
+    name: Imagem ${{ matrix.variant }}
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [akkos, akkos-nvidia]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Liberar espaço em disco
+        uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6
+
+      - name: Versão
+        run: echo "AKKOS_VERSION=$(date -u +%Y.%m.%d).${{ github.run_number }}" >> "$GITHUB_ENV"
+
+      - name: Construir e verificar
+        run: scripts/build-image.sh "${{ matrix.variant }}"
+
+      - name: Publicar no ghcr.io
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "$TOKEN" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+          for tag in latest "$AKKOS_VERSION"; do
+            podman push "localhost/${{ matrix.variant }}:latest" "$IMAGE_REGISTRY/${{ matrix.variant }}:$tag"
+          done
+          echo "### ${{ matrix.variant }} publicada: \`$IMAGE_REGISTRY/${{ matrix.variant }}:$AKKOS_VERSION\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Conferir se a imagem é pública
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          # Sistemas instalados baixam as atualizações sem login: o pacote precisa ser público.
+          if skopeo inspect --no-creds --raw "docker://$IMAGE_REGISTRY/${{ matrix.variant }}:latest" >/dev/null 2>&1; then
+            echo "imagem pública: OK"
+          else
+            echo "::warning::O pacote ${{ matrix.variant }} no ghcr.io está privado. Torne-o público em github.com/akkotfpn?tab=packages para que os sistemas instalados recebam atualizações."
+          fi

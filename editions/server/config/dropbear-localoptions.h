@@ -1,0 +1,20 @@
+/* Akko's OS: opções do Dropbear */
+#define DROPBEAR_X11FWD 0
+#define DROPBEAR_SVR_AGENTFWD 0
+#define DROPBEAR_CLI_AGENTFWD 0
+#define DROPBEAR_SVR_LOCALTCPFWD 1
+#define DROPBEAR_SVR_REMOTETCPFWD 0
+#define DROPBEAR_DSS 0
+#define DROPBEAR_ED25519 1
+#define DROPBEAR_ECDSA 1
+#define DROPBEAR_RSA 1
+#define DSS_PRIV_FILENAME "/data/etc/dropbear/dropbear_dss_host_key"
+#define RSA_PRIV_FILENAME "/data/etc/dropbear/dropbear_rsa_host_key"
+#define ECDSA_PRIV_FILENAME "/data/etc/dropbear/dropbear_ecdsa_host_key"
+#define ED25519_PRIV_FILENAME "/data/etc/dropbear/dropbear_ed25519_host_key"
+#define DEFAULT_PATH "/usr/local/bin:/usr/bin:/bin"
+#define DEFAULT_ROOT_PATH "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+#define SFTPSERVER_PATH "/usr/libexec/sftp-server"
+#define DROPBEAR_SFTPSERVER 1
+#define MAX_AUTH_TRIES 5
+#define DO_MOTD 0

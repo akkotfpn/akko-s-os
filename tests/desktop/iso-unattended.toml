@@ -1,0 +1,32 @@
+# SOMENTE PARA TESTE AUTOMATIZADO NO CI — NÃO DISTRIBUIR.
+#
+# Instala sem perguntas e APAGA O DISCO INTEIRO. Usado apenas numa máquina
+# virtual descartável (QEMU) com um disco virtual vazio criado pelo próprio
+# teste. A ISO distribuída usa editions/desktop/disk_config/iso.toml, que é
+# interativa.
+
+[customizations.installer.kickstart]
+contents = """
+text --non-interactive
+lang pt_BR.UTF-8
+keyboard --vckeymap=br-abnt2 --xlayouts=br
+timezone America/Sao_Paulo --utc
+zerombr
+clearpart --all --initlabel --disklabel=gpt
+autopart --noswap --type=btrfs
+network --bootproto=dhcp --device=link --activate --onboot=on
+user --name=akkoteste --password=akkos-ci-teste --plaintext --groups=wheel
+rootpw --lock
+bootloader --append="console=tty0 console=ttyS0,115200"
+poweroff
+
+%post --erroronfail --log=/root/akkos-ks-post.log
+set -x
+# console serial no sistema instalado: deixa o teste ler o boot e o login
+for f in /boot/loader/entries/*.conf; do
+    [ -f "$f" ] && ! grep -q 'console=ttyS0' "$f" && sed -i '/^options / s/$/ console=tty0 console=ttyS0,115200/' "$f"
+done
+grep -h '^options' /boot/loader/entries/*.conf || true
+bootc switch --mutate-in-place --transport registry @IMAGE_REF@
+%end
+"""

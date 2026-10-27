@@ -1,0 +1,39 @@
+#!/bin/sh
+# akko — ajuda e informações do Akko's OS
+
+. /etc/os-release
+
+info() {
+    up=$(cut -d' ' -f1 /proc/uptime)
+    mem_total=$(awk '/MemTotal/ {printf "%d", $2/1024}' /proc/meminfo)
+    mem_free=$(awk '/MemAvailable/ {printf "%d", $2/1024}' /proc/meminfo)
+    procs=$(ls -d /proc/[0-9]* 2>/dev/null | wc -l)
+    printf '\033[1;96m%s\033[0m\n' "$PRETTY_NAME"
+    printf '  Kernel     %s\n' "$(uname -r)"
+    printf '  Ligado há  %s s\n' "$up"
+    printf '  Memória    %s MB livres de %s MB\n' "$mem_free" "$mem_total"
+    printf '  Processos  %s\n' "$procs"
+}
+
+case "$1" in
+    info|"")
+        info
+        if [ -z "$1" ]; then
+            echo
+            printf '\033[1mComandos úteis\033[0m\n'
+            echo '  akko info     informações do sistema'
+            echo '  ls, cd, cat   arquivos (BusyBox)'
+            echo '  vi            editor de texto'
+            echo '  top, ps       processos'
+            echo '  free, df      memória e disco'
+            echo '  dmesg         mensagens do kernel'
+            echo '  busybox       lista todos os comandos disponíveis'
+            echo '  poweroff      desliga'
+            echo '  reboot        reinicia'
+        fi
+        ;;
+    *)
+        echo "uso: akko [info]" >&2
+        exit 1
+        ;;
+esac

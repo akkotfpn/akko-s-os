@@ -1,0 +1,13 @@
+# /etc/profile — Akko's OS
+export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+export HOME=/root
+export LANG=C.UTF-8
+export EDITOR=vi
+export PAGER=less
+
+# prompt: akko@akkos:~#   (ciano/azul, combinando com a tela de boot)
+PS1='\[\033[1;96m\]\u\[\033[0;2m\]@\[\033[1;94m\]\h\[\033[0m\]:\[\033[1;95m\]\w\[\033[0m\]\$ '
+
+alias ls='ls --color=auto'
+alias ll='ls -lah'
+alias ..='cd ..'

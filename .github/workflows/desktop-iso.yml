@@ -1,0 +1,151 @@
+name: Desktop - ISO e teste de instalação
+
+# Depois que as imagens são publicadas (push na main), gera as ISOs de
+# instalação e roda o teste de ponta a ponta: instala numa VM descartável com
+# KVM, boota o disco instalado, entra pelo serial e confere o sistema.
+
+on:
+  workflow_run:
+    workflows: ["Desktop - imagem"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_REGISTRY: ghcr.io/akkotfpn
+
+jobs:
+  iso:
+    name: ISO ${{ matrix.variant }}
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       contains(fromJSON('["push","workflow_dispatch"]'), github.event.workflow_run.event))
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [akkos, akkos-nvidia]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Liberar espaço em disco
+        uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6
+
+      - name: Preparar Podman (root)
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # mesma correção de armazenamento da action oficial (bootc-image-builder#446)
+          sudo rm -rf /var/lib/containers/storage
+          sudo mkdir -p /etc/containers
+          printf '[storage]\ndriver = "overlay"\nrunroot = "/run/containers/storage"\ngraphroot = "/var/lib/containers/storage"\n' | sudo tee /etc/containers/storage.conf
+          echo "$TOKEN" | sudo podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+          OUT=$([ -d /mnt ] && sudo mountpoint -q /mnt && echo /mnt/akkos-iso || echo "$PWD/saida")
+          sudo mkdir -p "$OUT" && echo "OUT=$OUT" >> "$GITHUB_ENV"
+          df -h / /mnt 2>/dev/null || true
+
+      - name: Gerar ISO
+        run: |
+          sudo CHOWN="$(id -u):$(id -g)" scripts/build-iso.sh \
+            "$IMAGE_REGISTRY/${{ matrix.variant }}:latest" \
+            editions/desktop/disk_config/iso.toml "$OUT"
+          iso=$(find "$OUT" -name '*.iso' | head -1)
+          final="$OUT/${{ matrix.variant }}-$(date -u +%Y.%m.%d).iso"
+          sudo mv "$iso" "$final"
+          (cd "$OUT" && sha256sum "$(basename "$final")" | sudo tee "$(basename "$final").sha256")
+          echo "### ISO ${{ matrix.variant }}: $(du -h "$final" | cut -f1)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enviar ISO
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ matrix.variant }}-iso
+          path: |
+            ${{ env.OUT }}/*.iso
+            ${{ env.OUT }}/*.sha256
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+  teste-instalacao:
+    name: Teste de instalação (akkos, VM com KVM)
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       contains(fromJSON('["push","workflow_dispatch"]'), github.event.workflow_run.event))
+    runs-on: ubuntu-26.04
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Liberar espaço em disco
+        uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6
+
+      - name: Instalar QEMU, OVMF e habilitar KVM
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q qemu-system-x86 qemu-utils ovmf python3-pil
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -la /dev/kvm
+
+      - name: Preparar Podman (root)
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          sudo rm -rf /var/lib/containers/storage
+          sudo mkdir -p /etc/containers
+          printf '[storage]\ndriver = "overlay"\nrunroot = "/run/containers/storage"\ngraphroot = "/var/lib/containers/storage"\n' | sudo tee /etc/containers/storage.conf
+          echo "$TOKEN" | sudo podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+          W=$([ -d /mnt ] && sudo mountpoint -q /mnt && echo /mnt/akkos-teste || echo "$PWD/teste")
+          sudo mkdir -p "$W" && sudo chown "$(id -u):$(id -g)" "$W" && echo "W=$W" >> "$GITHUB_ENV"
+
+      - name: Gerar ISO de teste (instalação automática)
+        run: |
+          sudo CHOWN="$(id -u):$(id -g)" scripts/build-iso.sh \
+            "$IMAGE_REGISTRY/akkos:latest" tests/desktop/iso-unattended.toml "$W/iso"
+          # libera o espaço da imagem antes de instalar
+          sudo podman rmi -a -f || true
+          df -h / "$W"
+
+      - name: Instalar, bootar e verificar
+        run: |
+          iso=$(find "$W/iso" -name '*.iso' | head -1)
+          python3 tests/desktop/qemu_install_test.py "$iso" "$W/resultado"
+
+      - name: Resumo
+        if: always()
+        run: |
+          f="$W/resultado/resultado.json"
+          if [ -f "$f" ]; then
+            {
+              echo '### Resultado do teste de instalação'
+              echo '```json'
+              cat "$f"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Enviar prints e logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: teste-instalacao
+          path: |
+            ${{ env.W }}/resultado/*.png
+            ${{ env.W }}/resultado/*.log
+            ${{ env.W }}/resultado/*.json
+          retention-days: 30

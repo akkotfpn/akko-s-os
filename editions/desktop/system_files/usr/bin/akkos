@@ -1,0 +1,119 @@
+#!/usr/bin/bash
+# akkos — ferramenta de linha de comando do Akko's OS Desktop
+#
+#   akkos version     edição, versão e imagem base
+#   akkos info        resumo do sistema e da imagem em uso
+#   akkos gpu         placas de vídeo, driver em uso e Vulkan
+#   akkos status      imagens instaladas (atual, próxima, anterior)
+#   akkos update      baixa a imagem nova (aplica no próximo boot)
+#   akkos rollback    volta para a imagem anterior (no próximo boot)
+#
+# Regra: só mostra o que consegue ler de verdade. Se uma informação não está
+# disponível, diz isso em vez de inventar.
+
+set -uo pipefail
+
+. /usr/lib/os-release
+
+bold=$'\033[1m'; cyan=$'\033[1;96m'; dim=$'\033[2m'; yellow=$'\033[33m'; red=$'\033[31m'; off=$'\033[0m'
+[ -t 1 ] || { bold=; cyan=; dim=; yellow=; red=; off=; }
+
+na() { printf '%snão disponível%s' "$dim" "$off"; }
+
+cmd_version() {
+    local name="${PRETTY_NAME:-}"
+    [ -n "$name" ] || name="Akko's OS"
+    printf '%s%s%s\n' "$cyan" "$name" "$off"
+    printf '  Edição    %s\n' "${VARIANT:-?}"
+    printf '  Versão    %s\n' "${AKKOS_VERSION:-?}"
+    printf '  Base      %s (Fedora %s)\n' "${AKKOS_BASE_IMAGE:-?}" "${VERSION_ID:-?}"
+}
+
+booted_image() {
+    if command -v bootc >/dev/null && command -v jq >/dev/null; then
+        bootc status --format json 2>/dev/null | jq -r '.status.booted.image.image.image // empty'
+    fi
+}
+
+cmd_info() {
+    cmd_version
+    local img mem cpu
+    img=$(booted_image)
+    mem=$(awk '/MemTotal/ {printf "%.1f GiB", $2/1048576}' /proc/meminfo)
+    cpu=$(awk -F: '/model name/ {gsub(/^ +/, "", $2); print $2; exit}' /proc/cpuinfo)
+    printf '  Imagem    %s\n' "${img:-$(na)}"
+    printf '  Kernel    %s\n' "$(uname -r)"
+    printf '  CPU       %s (%s núcleos)\n' "${cpu:-?}" "$(nproc)"
+    printf '  Memória   %s\n' "$mem"
+    echo
+    cmd_gpu
+}
+
+cmd_gpu() {
+    printf '%sPlacas de vídeo%s\n' "$bold" "$off"
+    if ! command -v lspci >/dev/null; then
+        echo "  lspci não encontrado"; return 1
+    fi
+    local found=0
+    while IFS= read -r slot; do
+        found=1
+        local desc driver vendor
+        desc=$(lspci -s "$slot" | cut -d' ' -f2- | sed 's/^[^:]*: //')
+        driver=$(lspci -k -s "$slot" | awk -F': ' '/Kernel driver in use/ {print $2}')
+        case "$desc" in
+            *NVIDIA*) vendor=NVIDIA ;;
+            *AMD*|*ATI*|*Advanced\ Micro*) vendor=AMD ;;
+            *Intel*) vendor=Intel ;;
+            *) vendor="Outro (virtual?)" ;;
+        esac
+        printf '  %s\n' "$desc"
+        printf '    Fabricante  %s\n' "$vendor"
+        printf '    Driver      %s\n' "${driver:-${yellow}nenhum driver carregado${off}}"
+        if [ "$vendor" = NVIDIA ]; then
+            if command -v nvidia-smi >/dev/null && nvidia-smi >/dev/null 2>&1; then
+                printf '    NVIDIA      %s\n' "$(nvidia-smi --query-gpu=name,driver_version --format=csv,noheader | head -1)"
+            else
+                printf '    NVIDIA      %snvidia-smi indisponível ou driver não carregado%s\n' "$yellow" "$off"
+                command -v mokutil >/dev/null && mokutil --sb-state 2>/dev/null | grep -qi enabled &&
+                    printf '    %sSecure Boot ativo: o módulo NVIDIA precisa da chave registrada (ver docs).%s\n' "$yellow" "$off"
+            fi
+        fi
+    done < <(lspci -D | awk '/VGA compatible|3D controller|Display controller/ {print $1}')
+    [ $found = 1 ] || echo "  nenhuma placa de vídeo encontrada"
+
+    printf '\n%sVulkan%s\n' "$bold" "$off"
+    if command -v vulkaninfo >/dev/null; then
+        local out
+        out=$(vulkaninfo --summary 2>/dev/null | awk -F'= ' '/deviceName|driverName|apiVersion|deviceType/ {gsub(/^ +| +$/, "", $1); print "    " $1 ": " $2}')
+        if [ -n "$out" ]; then echo "$out"; else printf '  %snenhum dispositivo Vulkan respondeu%s\n' "$yellow" "$off"; fi
+    else
+        printf '  vulkaninfo: %s\n' "$(na)"
+    fi
+}
+
+cmd_status() { bootc status; }
+
+cmd_update() {
+    echo "Vou baixar a versão mais nova do Akko's OS."
+    echo "Ela só entra em uso no próximo boot; a versão atual continua disponível pra voltar."
+    sudo bootc upgrade
+}
+
+cmd_rollback() {
+    echo "Vou marcar a versão anterior para o próximo boot."
+    echo "Seus arquivos em /home e /var não são alterados."
+    sudo bootc rollback && echo "Pronto. Reinicie para usar a versão anterior."
+}
+
+case "${1:-info}" in
+    version|--version) cmd_version ;;
+    info)     cmd_info ;;
+    gpu)      cmd_gpu ;;
+    status)   cmd_status ;;
+    update)   cmd_update ;;
+    rollback) cmd_rollback ;;
+    -h|--help|help)
+        sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' ;;
+    *)
+        echo "comando desconhecido: $1 (veja: akkos help)" >&2; exit 2 ;;
+esac

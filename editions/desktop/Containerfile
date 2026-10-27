@@ -1,0 +1,49 @@
+# Akko's OS Desktop — imagem bootc
+#
+# Base: Bazzite (Fedora Atomic), variante "deck": inicia no modo gaming
+# (Steam + Gamescope) e tem o desktop KDE Plasma a um clique.
+#
+#   AMD/Intel : ghcr.io/ublue-os/bazzite-deck:stable
+#   NVIDIA    : ghcr.io/ublue-os/bazzite-deck-nvidia:stable
+#
+# Contexto de build: a RAIZ do repositório.
+#   podman build -f editions/desktop/Containerfile \
+#     --build-arg BASE_IMAGE=ghcr.io/ublue-os/bazzite-deck:stable \
+#     --build-arg IMAGE_NAME=akkos -t akkos .
+
+ARG BASE_IMAGE=ghcr.io/ublue-os/bazzite-deck:stable
+
+# Arquivos de build ficam fora da imagem final (montados só durante o RUN)
+FROM scratch AS ctx
+COPY editions/desktop/build_files /build_files
+COPY editions/desktop/system_files /system_files
+COPY branding/out /branding
+COPY branding/palette.json /branding/palette.json
+
+FROM ${BASE_IMAGE}
+
+ARG BASE_IMAGE
+ARG IMAGE_NAME=akkos
+ARG IMAGE_VENDOR=akkotfpn
+ARG IMAGE_VARIANT="AMD/Intel"
+ARG AKKOS_VERSION=dev
+
+RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
+    --mount=type=cache,dst=/var/cache \
+    --mount=type=cache,dst=/var/log \
+    --mount=type=tmpfs,dst=/tmp \
+    BASE_IMAGE="${BASE_IMAGE}" \
+    IMAGE_NAME="${IMAGE_NAME}" \
+    IMAGE_VENDOR="${IMAGE_VENDOR}" \
+    IMAGE_VARIANT="${IMAGE_VARIANT}" \
+    AKKOS_VERSION="${AKKOS_VERSION}" \
+    /ctx/build_files/build.sh
+
+# Verificação final exigida pelo bootc
+RUN bootc container lint
+
+LABEL org.opencontainers.image.title="Akko's OS Desktop" \
+      org.opencontainers.image.description="Akko's OS: desktop e gaming sobre Fedora Atomic (base Bazzite)" \
+      org.opencontainers.image.source="https://github.com/akkotfpn/akko-s-os" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      containers.bootc="1"
