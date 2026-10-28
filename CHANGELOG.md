@@ -1,5 +1,13 @@
 # Registro de alterações
 
+## 2026-10-28
+
+### Desktop — fase D1 validada em VM
+- Teste de instalação completo verde no CI (instala, boota, 10 verificações).
+- Correções: ISO com raiz Btrfs; runner Ubuntu 24.04 para o
+  bootc-image-builder (AppArmor no 26.04); padrões pt-BR/ABNT2 na imagem;
+  hostname `akkos` no instalador; teste lendo saídas corretamente.
+
 ## 2026-10-27
 
 ### Desktop — fase D1 (aguardando validação no CI)

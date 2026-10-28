@@ -5,7 +5,7 @@
 <p align="center">Sistema operacional desktop e gaming, com identidade própria, sobre Linux.</p>
 
 > **Estado:** em desenvolvimento. A fase D1 (base, identidade mínima, ISO e
-> teste de instalação) está implementada e aguardando validação no CI.
+> teste de instalação) foi **validada em máquina virtual** em 2026-10-28.
 > Veja [docs/TESTES.md](docs/TESTES.md) para o que já foi validado.
 
 ## Edições

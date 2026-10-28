@@ -112,6 +112,7 @@ docs/                   este documento, TESTES.md, INSTALACAO.md
 Itens conhecidos que continuam como Bazzite/Steam até a fase D2:
 
 - Tela de boot (Plymouth) e menu de boot: exigem regenerar o initramfs.
+- Tela de login: tema embutido do SDDM (o tema configurado pela base não existe).
 - Mensagens e comandos `ujust`, `bazzite-*` e o texto de boas-vindas do terminal.
 - Interface do Steam no modo gaming (é do Steam; não deve ser rebatizada).
 - `ID=bazzite` no `os-release` (intencional, compatibilidade).
@@ -120,7 +121,7 @@ Itens conhecidos que continuam como Bazzite/Steam até a fase D2:
 
 | Fase | Entrega | Critério de aceitação | Estado |
 |---|---|---|---|
-| D1 Base | Imagem derivada + identidade mínima + CI + ISO + teste de instalação | CI verde; teste instala, boota e confirma Akko's OS, pt-BR, imagem de atualização própria, sessão gráfica ativa | **Implementado, aguardando validação** (aguarda 1ª execução do CI) |
+| D1 Base | Imagem derivada + identidade mínima + CI + ISO + teste de instalação | CI verde; teste instala, boota e confirma Akko's OS, pt-BR, imagem de atualização própria, sessão gráfica ativa | **Validado em VM** (2026-10-28, ver TESTES.md) |
 | D2 Identidade | Plymouth, SDDM, tema KDE claro/escuro da paleta, ícones, boas-vindas | Prints no teste de instalação | Planejado |
 | D3 Atualização | `akkos update/rollback` validados, canais estável/teste | Atualizar e reverter em VM no CI | Implementado (CLI), aguardando validação |
 | D4 Aplicativos | Central (Discover/Bazaar da base) com nossa marca | Instalar e remover Flatpak pela interface | Planejado |
