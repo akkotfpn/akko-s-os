@@ -13,6 +13,7 @@
 | Edição | Para quê | Base | Estado |
 |---|---|---|---|
 | **Desktop** | PC (AMD, Intel ou NVIDIA) ou VM com GPU: modo gaming + desktop KDE | Bazzite / Fedora Atomic | Fase D1 |
+| **Debian** | PC ou VM leve: sessão gráfica própria, explorador, rede, sons, Wine e segurança | Debian 13 (live-build) | Em validação ([README](editions/debian/README.md)) |
 | **Server** | VM mínima no Proxmox para rodar aplicações | Kernel Linux + musl + BusyBox, feito à mão | Pausada |
 
 ## Imagens

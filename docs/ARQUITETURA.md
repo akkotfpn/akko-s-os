@@ -4,7 +4,15 @@ Documento vivo. Estados: **Planejado**, **Em desenvolvimento**,
 **Implementado, aguardando validação**, **Validado** (só com teste registrado
 em [TESTES.md](TESTES.md)).
 
-## 1. Visão geral: duas edições, uma identidade
+## 1. Visão geral: três edições, uma identidade
+
+A edição **Debian** (`editions/debian/`, documentada no próprio
+[README](../editions/debian/README.md)) foi adicionada em 2026-11-08: sistema
+leve com sessão gráfica, explorador, applet de rede, sons sintetizados,
+compatibilidade Windows e endurecimento escritos para o Akko's OS, sobre
+Debian 13 com live-build. Ela convive com as duas edições abaixo.
+
+### Desktop e Server
 
 ```
                          Akko's OS

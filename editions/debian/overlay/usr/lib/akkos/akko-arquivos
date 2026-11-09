@@ -657,13 +657,13 @@ class Janela(Gtk.ApplicationWindow):
             self.modelo.set_value(self.modelo.get_iter(ref.get_path()), C_ICONE, pix)
         return False
 
-    def _visivel(self, modelo, it, _dados):
+    def _visivel(self, modelo, it, *_):
         if modelo[it][C_OCULTO] and not self.mostrar_ocultos:
             return False
         termo = self.busca.get_text().strip().casefold()
         return not termo or termo in modelo[it][C_NOME].casefold()
 
-    def _ordem_padrao(self, modelo, a, b, _dados):
+    def _ordem_padrao(self, modelo, a, b, *_):
         pa, pb = modelo[a][C_EH_PASTA], modelo[b][C_EH_PASTA]
         if pa != pb:
             return -1 if pa else 1
