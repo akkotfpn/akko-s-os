@@ -1,0 +1,6 @@
+
+(akko-desktop:4144): dbind-WARNING **: 22:17:41.957: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files
+/usr/lib/akkos/akko-desktop:149: DeprecationWarning: Gdk.Screen.get_width is deprecated
+  self.set_default_size(tela.get_width(), tela.get_height())
+/usr/lib/akkos/akko-desktop:149: DeprecationWarning: Gdk.Screen.get_height is deprecated
+  self.set_default_size(tela.get_width(), tela.get_height())

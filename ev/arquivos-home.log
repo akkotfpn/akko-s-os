@@ -1,0 +1,2 @@
+
+(akko-arquivos:4232): dbind-WARNING **: 22:17:56.241: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files

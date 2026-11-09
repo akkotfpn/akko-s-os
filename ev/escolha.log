@@ -1,0 +1,5 @@
+
+(akko-win-escolha:4354): dbind-WARNING **: 22:18:09.828: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files
+
+(akko-win-escolha:4354): Gtk-WARNING **: 22:18:09.869: Could not load a pixbuf from /org/gtk/libgtk/theme/Adwaita/assets/check-symbolic.svg.
+This may indicate that pixbuf loaders or the mime database could not be found.

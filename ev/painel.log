@@ -1,0 +1,4 @@
+
+(akko-painel:4117): dbind-WARNING **: 22:17:39.400: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files
+/usr/lib/akkos/akko-painel:484: DeprecationWarning: Gdk.Screen.get_height is deprecated
+  tela_altura = Gdk.Screen.get_default().get_height()

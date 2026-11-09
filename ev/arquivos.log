@@ -1,0 +1,26 @@
+
+(akko-arquivos:4167): dbind-WARNING **: 22:17:44.533: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files
+
+(akko-arquivos:4167): Gtk-CRITICAL **: 22:17:47.901: gtk_tree_model_sort_convert_iter_to_child_iter: assertion 'valid == TRUE' failed
+
+(akko-arquivos:4167): Gtk-CRITICAL **: 22:17:47.901: gtk_tree_model_filter_real_unref_node: assertion 'filter->priv->stamp == iter->stamp' failed
+
+(akko-arquivos:4167): Gtk-CRITICAL **: 22:17:47.901: gtk_tree_model_sort_real_unref_node: assertion 'elt->ref_count > 0' failed
+
+(akko-arquivos:4167): Gtk-CRITICAL **: 22:17:50.092: gtk_tree_model_sort_convert_iter_to_child_iter: assertion 'valid == TRUE' failed
+
+(akko-arquivos:4167): Gtk-CRITICAL **: 22:17:50.092: gtk_tree_model_filter_real_unref_node: assertion 'filter->priv->stamp == iter->stamp' failed
+
+(akko-arquivos:4167): Gtk-CRITICAL **: 22:17:50.092: gtk_tree_model_sort_real_unref_node: assertion 'elt->ref_count > 0' failed
+
+(akko-arquivos:4167): Gtk-CRITICAL **: 22:17:50.828: gtk_tree_model_sort_convert_iter_to_child_iter: assertion 'valid == TRUE' failed
+
+(akko-arquivos:4167): Gtk-CRITICAL **: 22:17:50.828: gtk_tree_model_filter_real_unref_node: assertion 'filter->priv->stamp == iter->stamp' failed
+
+(akko-arquivos:4167): Gtk-CRITICAL **: 22:17:50.828: gtk_tree_model_sort_real_unref_node: assertion 'elt->ref_count > 0' failed
+
+(akko-arquivos:4167): Gtk-CRITICAL **: 22:17:51.564: gtk_tree_model_sort_convert_iter_to_child_iter: assertion 'valid == TRUE' failed
+
+(akko-arquivos:4167): Gtk-CRITICAL **: 22:17:51.564: gtk_tree_model_filter_real_unref_node: assertion 'filter->priv->stamp == iter->stamp' failed
+
+(akko-arquivos:4167): Gtk-CRITICAL **: 22:17:51.564: gtk_tree_model_sort_real_unref_node: assertion 'elt->ref_count > 0' failed
