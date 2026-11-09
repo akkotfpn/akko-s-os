@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Compatibilidade Windows
+Comment=Abre programas Windows (.exe e .msi) com Wine
+Exec=win-launcher %f
+Icon=wine
+Terminal=false
+NoDisplay=true
+Categories=Wine;
+MimeType=application/x-ms-dos-executable;application/x-msdownload;application/vnd.microsoft.portable-executable;application/x-msi;application/x-ms-shortcut;application/x-wine-extension-msp;

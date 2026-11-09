@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Akko's OS
+Comment=Ambiente gráfico do Akko's OS
+Exec=/usr/bin/akkos-session
+TryExec=/usr/bin/akkos-session
+Type=Application
+DesktopNames=AkkOS

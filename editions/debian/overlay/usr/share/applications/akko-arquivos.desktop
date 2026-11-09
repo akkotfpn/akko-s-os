@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Arquivos
+GenericName=Explorador de arquivos
+Comment=Navegue, copie e organize seus arquivos e pendrives
+Exec=akko-arquivos %U
+Icon=system-file-manager
+Terminal=false
+Categories=System;FileManager;Utility;
+MimeType=inode/directory;
+Keywords=pastas;arquivos;explorador;pendrive;
+StartupNotify=true

@@ -1,0 +1,24 @@
+{
+  "HomepageLocation": "file:///usr/share/akkos/inicio/index.html",
+  "HomepageIsNewTabPage": false,
+  "ShowHomeButton": true,
+  "RestoreOnStartup": 4,
+  "RestoreOnStartupURLs": ["file:///usr/share/akkos/inicio/index.html"],
+  "NewTabPageLocation": "file:///usr/share/akkos/inicio/index.html",
+  "DefaultSearchProviderEnabled": true,
+  "DefaultSearchProviderName": "DuckDuckGo",
+  "DefaultSearchProviderSearchURL": "https://duckduckgo.com/?q={searchTerms}",
+  "DefaultSearchProviderSuggestURL": "https://duckduckgo.com/ac/?q={searchTerms}&type=list",
+  "MetricsReportingEnabled": false,
+  "BrowserSignin": 0,
+  "PromotionsEnabled": false,
+  "DefaultBrowserSettingEnabled": false,
+  "BrowserThemeColor": "#0B1020",
+  "ManagedBookmarks": [
+    {"toplevel_name": "Akko's OS"},
+    {"name": "Início", "url": "file:///usr/share/akkos/inicio/index.html"},
+    {"name": "Projeto no GitHub", "url": "https://github.com/akkotfpn/akko-s-os"},
+    {"name": "Flathub (aplicativos)", "url": "https://flathub.org"}
+  ],
+  "BookmarkBarEnabled": true
+}

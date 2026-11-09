@@ -1,0 +1,18 @@
+# Teste automatizado do Akko's OS. Só roda quando o kernel recebe
+# akkos.teste=1 (o CI faz isso no QEMU); num boot normal, não faz nada.
+[Unit]
+Description=Akko's OS: verificação automatizada (somente CI)
+ConditionKernelCommandLine=akkos.teste=1
+After=graphical.target lightdm.service NetworkManager.service
+Wants=graphical.target
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/akkos/ci/akkos-ci-teste.sh
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/ttyS0
+TimeoutStartSec=0
+
+[Install]
+WantedBy=graphical.target

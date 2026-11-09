@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Configurar Windows (Wine)
+Comment=Ajustes do ambiente de compatibilidade Windows
+Exec=win-launcher configurar padrao
+Icon=wine
+Terminal=false
+Categories=Wine;System;

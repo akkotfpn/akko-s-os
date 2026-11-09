@@ -9,3 +9,6 @@ teste/
 *.iso
 *.qcow2
 __pycache__/
+# gerados pelo build da edição Debian
+editions/debian/trabalho/
+editions/debian/saida/

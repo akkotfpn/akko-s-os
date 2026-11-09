@@ -1,0 +1,83 @@
+#!/bin/sh
+# Akko's OS — configuração do sistema dentro do chroot (roda no build da ISO).
+set -e
+log() { echo "[akkos] $*"; }
+VERSAO="$(cat /usr/share/akkos/versao 2>/dev/null || echo dev)"
+
+log "identidade (os-release, issue)"
+# desvia o os-release do Debian para que atualizações do base-files não apaguem o nosso
+if ! dpkg-divert --list /usr/lib/os-release | grep -q akkos; then
+    dpkg-divert --package akkos --add --rename --divert /usr/lib/os-release.debian /usr/lib/os-release
+fi
+cat > /usr/lib/os-release <<OSR
+PRETTY_NAME="Akko's OS ${VERSAO} (Debian 13 trixie)"
+NAME="Akko's OS"
+VERSION_ID="${VERSAO}"
+VERSION="${VERSAO} (trixie)"
+VERSION_CODENAME=trixie
+DEBIAN_VERSION_FULL=$(cat /etc/debian_version)
+ID=akkos
+ID_LIKE=debian
+HOME_URL="https://github.com/akkotfpn/akko-s-os"
+SUPPORT_URL="https://github.com/akkotfpn/akko-s-os/issues"
+BUG_REPORT_URL="https://github.com/akkotfpn/akko-s-os/issues"
+LOGO=akkos-logo
+ANSI_COLOR="1;96"
+OSR
+ln -sf ../usr/lib/os-release /etc/os-release
+printf "Akko's OS %s \\\\n \\\\l\n\n" "$VERSAO" > /etc/issue
+echo "Akko's OS $VERSAO" > /etc/issue.net
+
+log "Openbox: rc.xml a partir do padrão + tema"
+python3 /usr/lib/akkos/gerar-openbox-rc.py /etc/xdg/openbox/rc.xml /etc/xdg/akkos/openbox/rc.xml
+
+log "Plymouth: tema akkos"
+plymouth-set-default-theme akkos
+plymouth-set-default-theme | grep -qx akkos
+
+log "serviços"
+systemctl enable NetworkManager.service lightdm.service systemd-timesyncd.service
+systemctl enable akkos-ci-teste.service
+systemctl set-default graphical.target
+# áudio do usuário (PipeWire) ativado para todas as contas
+systemctl --global enable pipewire.socket pipewire-pulse.socket wireplumber.service || true
+# rede: o NetworkManager gerencia todas as placas (nada em /etc/network/interfaces)
+printf 'auto lo\niface lo inet loopback\n' > /etc/network/interfaces
+mkdir -p /etc/NetworkManager/conf.d
+printf '[ifupdown]\nmanaged=true\n\n[device]\nwifi.scan-rand-mac-address=yes\n' > /etc/NetworkManager/conf.d/10-akkos.conf
+
+log "programas: win-launcher, navegador em sandbox, atalhos"
+chmod 0755 /usr/bin/win-launcher /usr/lib/akkos/* 2>/dev/null || true
+chmod 0644 /usr/lib/akkos/python/*.py
+# o .desktop original do Chromium chama /usr/bin/chromium direto (fora da sandbox):
+# a cópia em /usr/local/share tem prioridade e fica escondida; o menu usa "Navegador"
+if [ -f /usr/share/applications/chromium.desktop ]; then
+    mkdir -p /usr/local/share/applications
+    sed -e 's|^Exec=/usr/bin/chromium|Exec=akko-navegador|' /usr/share/applications/chromium.desktop \
+        > /usr/local/share/applications/chromium.desktop
+    echo "NoDisplay=true" >> /usr/local/share/applications/chromium.desktop
+fi
+# escondidos do menu (ferramentas internas ou duplicadas)
+for app in nm-applet obconf openbox lxpolkit display-im6.q16 xfce4-terminal-settings; do
+    [ -f "/usr/share/applications/$app.desktop" ] || continue
+    mkdir -p /usr/local/share/applications
+    cp "/usr/share/applications/$app.desktop" "/usr/local/share/applications/$app.desktop"
+    echo "NoDisplay=true" >> "/usr/local/share/applications/$app.desktop"
+done
+
+log "Flatpak: repositório Flathub"
+flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak remotes --system
+
+log "caches de ícones, fontes e menus"
+gtk-update-icon-cache -f -t /usr/share/icons/hicolor || true
+update-desktop-database /usr/share/applications /usr/local/share/applications || true
+fc-cache -f >/dev/null
+
+log "segurança"
+/usr/lib/akkos/security_hardening.sh
+
+log "initramfs com o tema do Plymouth"
+update-initramfs -u -k all
+
+log "pronto"

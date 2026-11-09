@@ -1,0 +1,3 @@
+#!/bin/sh
+# Navegador do Akko's OS: Chromium sempre dentro da sandbox (firejail + AppArmor)
+exec firejail --quiet --profile=chromium /usr/bin/chromium "$@"

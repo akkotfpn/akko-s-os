@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Início — Akko's OS</title>
+<style>
+  :root {
+    --bg: #0B1020; --surface: #141A2E; --surface-alt: #1C2440;
+    --text: #E6E9F2; --muted: #8B93AD;
+    --cyan: #22D3EE; --indigo: #6366F1; --magenta: #D946EF;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: radial-gradient(1200px 600px at 15% 90%, rgba(34,211,238,.16), transparent 60%),
+                radial-gradient(1000px 520px at 88% 10%, rgba(217,70,239,.14), transparent 60%),
+                var(--bg);
+    color: var(--text);
+    font: 15px/1.5 "Inter", "Noto Sans", system-ui, sans-serif;
+    display: grid; place-items: center; padding: 16px;
+  }
+  main { width: min(720px, 100%); text-align: center; }
+  .marca { display: inline-flex; align-items: center; gap: 14px; margin-bottom: 28px; }
+  .marca img { width: 56px; height: 56px; }
+  .marca h1 { margin: 0; font-size: 34px; font-weight: 800; letter-spacing: -.5px; }
+  form { display: flex; gap: 8px; background: var(--surface); border: 1px solid var(--surface-alt);
+         border-radius: 14px; padding: 6px; }
+  form:focus-within { border-color: var(--cyan); }
+  input { flex: 1; min-width: 0; background: transparent; border: 0; color: var(--text);
+          font: inherit; font-size: 17px; padding: 10px 12px; outline: none; }
+  button { border: 0; border-radius: 10px; padding: 0 18px; font: inherit; font-weight: 700; color: #fff;
+           background: linear-gradient(90deg, var(--cyan), var(--indigo)); cursor: pointer; }
+  nav { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-top: 26px; }
+  nav a { background: var(--surface); border: 1px solid var(--surface-alt); border-radius: 12px; padding: 14px 10px;
+          color: var(--text); text-decoration: none; font-weight: 600; }
+  nav a:hover { border-color: var(--indigo); }
+  nav small { display: block; color: var(--muted); font-weight: 400; font-size: 12px; margin-top: 2px; }
+  footer { margin-top: 30px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="marca">
+    <img src="/usr/share/icons/hicolor/scalable/apps/akkos-logo.svg" alt="">
+    <h1>Akko's OS</h1>
+  </div>
+  <form action="https://duckduckgo.com/" method="get" role="search">
+    <input name="q" placeholder="Pesquisar na web…" aria-label="Pesquisar na web" autofocus>
+    <button type="submit">Buscar</button>
+  </form>
+  <nav aria-label="Atalhos">
+    <a href="https://flathub.org">Flathub<small>Aplicativos</small></a>
+    <a href="https://github.com/akkotfpn/akko-s-os">Akko's OS<small>Projeto</small></a>
+    <a href="https://www.debian.org/security/">Segurança<small>Avisos Debian</small></a>
+    <a href="https://appdb.winehq.org">Wine AppDB<small>Compatibilidade</small></a>
+  </nav>
+  <footer>Navegador em sandbox (firejail + AppArmor) • busca sem rastreamento</footer>
+</main>
+</body>
+</html>

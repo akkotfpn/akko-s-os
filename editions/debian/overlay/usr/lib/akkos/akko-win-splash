@@ -1,0 +1,97 @@
+#!/usr/bin/python3
+"""
+akko-win-splash NOME [MENSAGEM] — janela de carregamento nativa do Akko's OS
+enquanto um programa Windows abre.
+
+Fecha sozinha quando: aparece uma janela nova do Wine (classe *.exe ou do
+programa), o win-launcher a encerra (o processo do Wine terminou), ou após
+90 s. Não rouba o foco do programa que abriu.
+"""
+
+import os
+import sys
+import time
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Wnck", "3.0")
+from gi.repository import GLib, Gtk, Wnck  # noqa: E402
+
+sys.path.insert(0, "/usr/lib/akkos/python")
+import akkos_comum as ak  # noqa: E402
+
+CSS = """
+window.splash { background-color: @akk_bg; border: 1px solid @akk_surface_alt; border-radius: 16px; }
+.splash .programa { font-size: 15pt; font-weight: 700; }
+.splash progressbar trough { min-height: 4px; background-color: @akk_surface_alt; border-radius: 2px; }
+.splash progressbar progress { min-height: 4px; background-image: linear-gradient(90deg, @akk_cyan, @akk_magenta); border-radius: 2px; }
+"""
+
+
+def main():
+    nome = sys.argv[1] if len(sys.argv) > 1 else "Programa Windows"
+    mensagem = sys.argv[2] if len(sys.argv) > 2 else "Preparando compatibilidade Windows…"
+    base = os.path.splitext(nome)[0].lower()
+
+    ak.aplicar_css(CSS)
+    Gtk.Settings.get_default().set_property("gtk-application-prefer-dark-theme", True)
+    janela = Gtk.Window(title=f"Abrindo {nome}")
+    janela.get_style_context().add_class("splash")
+    janela.set_decorated(False)
+    janela.set_position(Gtk.WindowPosition.CENTER)
+    janela.set_default_size(440, 190)
+    janela.set_keep_above(True)
+    janela.set_skip_taskbar_hint(True)
+    janela.set_accept_focus(False)
+
+    caixa = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin=24)
+    topo = Gtk.Box(spacing=14)
+    icone = Gtk.Image.new_from_icon_name("wine", Gtk.IconSize.DIALOG)
+    icone.set_pixel_size(56)
+    textos = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, valign=Gtk.Align.CENTER)
+    titulo = Gtk.Label(label=nome, xalign=0, ellipsize=3)
+    titulo.get_style_context().add_class("programa")
+    sub = Gtk.Label(label=mensagem, xalign=0, wrap=True)
+    sub.get_style_context().add_class("akkos-muted")
+    textos.pack_start(titulo, False, False, 0)
+    textos.pack_start(sub, False, False, 0)
+    topo.pack_start(icone, False, False, 0)
+    topo.pack_start(textos, True, True, 0)
+    barra = Gtk.ProgressBar()
+    rodape = Gtk.Label(label="Akko's OS • compatibilidade Windows (Wine + DXVK)", xalign=0)
+    rodape.get_style_context().add_class("akkos-muted")
+    caixa.pack_start(topo, True, True, 0)
+    caixa.pack_start(barra, False, False, 0)
+    caixa.pack_start(rodape, False, False, 0)
+    janela.add(caixa)
+    janela.connect("destroy", Gtk.main_quit)
+    janela.show_all()
+
+    tela = Wnck.Screen.get_default()
+    tela.force_update()
+    existentes = {w.get_xid() for w in tela.get_windows()}
+    inicio = time.monotonic()
+
+    def janela_nova(_tela, w):
+        if w.get_xid() in existentes or w.get_name() == janela.get_title():
+            return
+        classe = " ".join(filter(None, [w.get_class_group_name(), w.get_class_instance_name(), w.get_name()])).lower()
+        if ".exe" in classe or base in classe or "wine" in classe:
+            GLib.timeout_add(400, janela.destroy)
+
+    tela.connect("window-opened", janela_nova)
+
+    def pulsar():
+        barra.pulse()
+        if time.monotonic() - inicio > 90:
+            janela.destroy()
+            return False
+        return True
+
+    GLib.timeout_add(120, pulsar)
+    Gtk.main()
+
+
+if __name__ == "__main__":
+    main()

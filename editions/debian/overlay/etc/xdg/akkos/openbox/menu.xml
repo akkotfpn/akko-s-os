@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Akko's OS: menu do botão direito na área de trabalho -->
+<openbox_menu xmlns="http://openbox.org/3.4/menu">
+  <menu id="root-menu" label="Akko's OS">
+    <item label="Arquivos"><action name="Execute"><command>akko-arquivos</command></action></item>
+    <item label="Navegador"><action name="Execute"><command>akko-navegador</command></action></item>
+    <item label="Terminal"><action name="Execute"><command>xfce4-terminal</command></action></item>
+    <item label="Rede"><action name="Execute"><command>akko-rede</command></action></item>
+    <separator/>
+    <item label="Todos os aplicativos…"><action name="Execute"><command>akko-painel --menu</command></action></item>
+    <item label="Capturar a tela"><action name="Execute"><command>akko-captura</command></action></item>
+    <separator/>
+    <item label="Monitores"><action name="Execute"><command>arandr</command></action></item>
+    <item label="Reconfigurar a área de trabalho"><action name="Reconfigure"/></item>
+  </menu>
+</openbox_menu>

@@ -1,0 +1,50 @@
+# Akko's OS — notificações (dunst)
+[global]
+    monitor = 0
+    follow = mouse
+    origin = bottom-right
+    offset = (14, 58)
+    width = (280, 380)
+    height = (0, 160)
+    notification_limit = 5
+    padding = 12
+    horizontal_padding = 14
+    frame_width = 1
+    frame_color = "#1C2440"
+    separator_color = frame
+    corner_radius = 12
+    font = Inter 10
+    markup = full
+    format = "<b>%s</b>\n%b"
+    icon_position = left
+    min_icon_size = 32
+    max_icon_size = 48
+    icon_theme = Papirus-Dark
+    enable_recursive_icon_lookup = true
+    show_age_threshold = 60
+    mouse_left_click = do_action, close_current
+    mouse_right_click = close_all
+    progress_bar_frame_width = 0
+    progress_bar_corner_radius = 3
+    highlight = "#22D3EE"
+
+[urgency_low]
+    background = "#0B1020"
+    foreground = "#8B93AD"
+    timeout = 4
+
+[urgency_normal]
+    background = "#141A2E"
+    foreground = "#E6E9F2"
+    timeout = 7
+
+[urgency_critical]
+    background = "#141A2E"
+    foreground = "#E6E9F2"
+    frame_color = "#EF4444"
+    timeout = 0
+
+# toca o som do Akko's OS em toda notificação
+[akkos-som]
+    summary = "*"
+    script = /usr/lib/akkos/dunst-som

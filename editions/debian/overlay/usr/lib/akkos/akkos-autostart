@@ -1,0 +1,20 @@
+#!/bin/sh
+# Roda quando o Openbox está pronto: papel de parede, serviços da sessão e painel.
+
+PAPEL=/usr/share/backgrounds/akkos/akkos-wallpaper-dark.png
+[ -f "$HOME/.config/akkos/papel-de-parede" ] && PAPEL="$(cat "$HOME/.config/akkos/papel-de-parede")"
+feh --no-fehbg --bg-fill "$PAPEL" &
+
+/usr/lib/akkos/akko-soundd &                 # sons do sistema (toca o boot_chime)
+dunst &                                      # notificações (com som, ver dunstrc)
+lxpolkit &                                   # pede senha quando algo precisa de administrador
+akko-painel &                                # barra de tarefas
+xcape -e 'Super_L=Super_L|space' &           # tocar a tecla Super sozinha abre o menu
+
+# prepara a compatibilidade Windows em segundo plano (só na primeira vez)
+( sleep 20; win-launcher primeiro-uso ) &
+
+# o teste automatizado do CI (só com akkos.teste=1 na linha do kernel) precisa
+# saber que a sessão subiu
+grep -q 'akkos.teste=1' /proc/cmdline && touch "${XDG_RUNTIME_DIR:-/tmp}/akkos-sessao-pronta"
+exit 0

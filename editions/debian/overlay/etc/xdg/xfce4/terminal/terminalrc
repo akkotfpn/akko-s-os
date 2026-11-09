@@ -1,0 +1,13 @@
+[Configuration]
+FontName=Monospace 11
+ColorForeground=#E6E9F2
+ColorBackground=#0B1020
+ColorCursor=#22D3EE
+ColorBold=#FFFFFF
+ColorPalette=#1C2440;#EF4444;#22C55E;#F59E0B;#6366F1;#D946EF;#22D3EE;#E6E9F2;#3A4466;#F87171;#4ADE80;#FBBF24;#818CF8;#E879F9;#67E8F9;#FFFFFF
+MiscMenubarDefault=FALSE
+MiscToolbarDefault=FALSE
+ScrollingBar=TERMINAL_SCROLLBAR_NONE
+MiscCursorBlinks=TRUE
+MiscDefaultGeometry=110x30
+TitleMode=TERMINAL_TITLE_REPLACE

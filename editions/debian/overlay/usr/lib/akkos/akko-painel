@@ -408,7 +408,7 @@ class Painel(Gtk.ApplicationWindow):
         self.add(barra)
 
         self.botao_menu = Gtk.Button()
-        self.botao_menu.set_tooltip_text("Aplicativos (Super)")
+        self.botao_menu.set_tooltip_text("Aplicativos (tecla Super)")
         self.botao_menu.add(Gtk.Image.new_from_icon_name("akkos-logo", Gtk.IconSize.LARGE_TOOLBAR))
         self.botao_menu.connect("clicked", lambda b: (som_clique(), self.menu.alternar(self._x_de(b))))
         barra.pack_start(self.botao_menu, False, False, 0)

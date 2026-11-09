@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Akko's OS
+Description=Tela de inicialização do Akko's OS
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/akkos
+ScriptFile=/usr/share/plymouth/themes/akkos/akkos.script

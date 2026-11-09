@@ -1,0 +1,47 @@
+#!/usr/bin/python3
+"""akko-captura [--janela] — salva um print da tela (ou da janela ativa) em
+~/Imagens/Capturas e avisa com notificação. Ligado à tecla Print Screen."""
+
+import os
+import subprocess
+import sys
+import time
+
+import gi
+
+gi.require_version("Gdk", "3.0")
+from gi.repository import Gdk, GLib  # noqa: E402
+
+sys.path.insert(0, "/usr/lib/akkos/python")
+import akkos_comum as ak  # noqa: E402
+
+
+def main():
+    Gdk.init([])
+    raiz = Gdk.get_default_root_window()
+    alvo, x, y = raiz, 0, 0
+    largura, altura = raiz.get_width(), raiz.get_height()
+    if "--janela" in sys.argv:
+        ativa = Gdk.Screen.get_default().get_active_window()
+        if ativa:
+            # inclui a moldura (barra de título) desenhada pelo Openbox
+            moldura = ativa.get_frame_extents()
+            x, y, largura, altura = moldura.x, moldura.y, moldura.width, moldura.height
+    time.sleep(0.15)   # deixa o menu/tecla sumir da tela
+    imagem = Gdk.pixbuf_get_from_window(alvo, x, y, largura, altura)
+    if imagem is None:
+        ak.tocar("error")
+        sys.exit(1)
+    imagens = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_PICTURES) or os.path.expanduser("~/Imagens")
+    pasta = os.path.join(imagens, "Capturas")
+    os.makedirs(pasta, exist_ok=True)
+    arquivo = os.path.join(pasta, time.strftime("Captura %Y-%m-%d %H-%M-%S.png"))
+    imagem.savev(arquivo, "png", [], [])
+    ak.tocar("click")
+    subprocess.Popen(["notify-send", "-i", arquivo, "Captura salva", arquivo],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print(arquivo)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,15 @@
+[Default Applications]
+inode/directory=akko-arquivos.desktop
+application/x-ms-dos-executable=akko-win-launcher.desktop
+application/x-msdownload=akko-win-launcher.desktop
+application/vnd.microsoft.portable-executable=akko-win-launcher.desktop
+application/x-msi=akko-win-launcher.desktop
+text/html=akko-navegador.desktop
+application/xhtml+xml=akko-navegador.desktop
+x-scheme-handler/http=akko-navegador.desktop
+x-scheme-handler/https=akko-navegador.desktop
+text/plain=org.xfce.mousepad.desktop
+image/png=org.xfce.ristretto.desktop
+image/jpeg=org.xfce.ristretto.desktop
+image/gif=org.xfce.ristretto.desktop
+image/webp=org.xfce.ristretto.desktop

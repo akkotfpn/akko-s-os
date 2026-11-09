@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Rede
+GenericName=Wi-Fi e cabo
+Comment=Conecte ao Wi-Fi e veja o estado da rede
+Exec=akko-rede
+Icon=network-wireless
+Terminal=false
+Categories=System;Settings;Network;
+Keywords=wifi;internet;ip;conexão;

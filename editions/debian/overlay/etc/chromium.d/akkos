@@ -1,0 +1,4 @@
+# Akko's OS: opções do navegador
+# senhas guardadas sem chaveiro do GNOME (não usamos gnome-keyring);
+# tema escuro combinando com o sistema
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --password-store=basic --force-dark-mode --enable-features=WebUIDarkMode"

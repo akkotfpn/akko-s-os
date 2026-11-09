@@ -1,0 +1,27 @@
+#!/bin/sh
+# akkos-session — sessão gráfica do Akko's OS (X11).
+# O LightDM chama este script (via /usr/share/xsessions/akkos.desktop).
+# Ele prepara o ambiente e entrega o controle ao Openbox, que roda o
+# /usr/lib/akkos/akkos-autostart quando estiver pronto.
+
+export XDG_CURRENT_DESKTOP=AkkOS
+export XDG_SESSION_DESKTOP=akkos
+export DESKTOP_SESSION=akkos
+export XDG_MENU_PREFIX=
+export GTK_OVERLAY_SCROLLING=1
+export QT_QPA_PLATFORMTHEME=gtk3
+export _JAVA_AWT_WM_NONREPARENTING=1
+
+# pastas pessoais em português (Documentos, Downloads, Imagens…)
+command -v xdg-user-dirs-update >/dev/null && xdg-user-dirs-update
+
+# o barramento da sessão e os serviços do systemd --user precisam do DISPLAY
+if command -v dbus-update-activation-environment >/dev/null; then
+    dbus-update-activation-environment --systemd DISPLAY XAUTHORITY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DESKTOP_SESSION
+fi
+
+xsetroot -cursor_name left_ptr 2>/dev/null
+xset s 600 600 2>/dev/null          # protetor de tela em 10 min
+xset r rate 300 30 2>/dev/null
+
+exec openbox --config-file /etc/xdg/akkos/openbox/rc.xml --startup /usr/lib/akkos/akkos-autostart

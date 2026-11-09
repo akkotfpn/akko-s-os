@@ -1,0 +1,7 @@
+#!/bin/sh
+# Chamado pelo dunst a cada notificação: erro (crítica) ou aviso normal.
+case "${DUNST_URGENCY:-NORMAL}" in
+    CRITICAL) exec akko-sound error ;;
+    LOW) exit 0 ;;
+    *) exec akko-sound notify ;;
+esac

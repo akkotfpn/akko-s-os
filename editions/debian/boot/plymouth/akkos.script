@@ -1,0 +1,117 @@
+# Akko's OS — tela de inicialização (Plymouth, plugin script)
+# Logo e nome aparecem suavemente; cinco pontos ciano "respiram" em onda.
+# Também desenha o pedido de senha (disco criptografado) e mensagens.
+
+Window.SetBackgroundTopColor(0.043, 0.063, 0.125);      # #0B1020
+Window.SetBackgroundBottomColor(0.031, 0.043, 0.090);
+
+largura = Window.GetWidth();
+altura = Window.GetHeight();
+cx = Window.GetX() + largura / 2;
+cy = Window.GetY() + altura / 2;
+
+logo.image = Image("logo.png");
+logo.sprite = Sprite(logo.image);
+logo.sprite.SetX(cx - logo.image.GetWidth() / 2);
+logo.sprite.SetY(cy - logo.image.GetHeight() / 2 - 60);
+logo.sprite.SetZ(10);
+logo.sprite.SetOpacity(0);
+
+nome.image = Image("nome.png");
+nome.sprite = Sprite(nome.image);
+nome.sprite.SetX(cx - nome.image.GetWidth() / 2);
+nome.sprite.SetY(cy + logo.image.GetHeight() / 2 - 40);
+nome.sprite.SetZ(10);
+nome.sprite.SetOpacity(0);
+
+ponto_imagem = Image("ponto.png");
+NPONTOS = 5;
+ESPACO = 24;
+i = 0;
+while (i < NPONTOS) {
+    pontos[i] = Sprite(ponto_imagem);
+    pontos[i].SetX(cx - (NPONTOS - 1) * ESPACO / 2 + i * ESPACO - 6);
+    pontos[i].SetY(cy + logo.image.GetHeight() / 2 + 40);
+    pontos[i].SetZ(10);
+    pontos[i].SetOpacity(0.15);
+    i++;
+}
+
+tempo = 0;
+
+fun atualizar() {
+    global.tempo++;
+    a = tempo / 45;
+    if (a > 1) a = 1;
+    logo.sprite.SetOpacity(a);
+    nome.sprite.SetOpacity(a);
+    j = 0;
+    while (j < NPONTOS) {
+        v = Math.Sin(tempo * 0.09 - j * 0.7);
+        if (v < 0) v = 0;
+        pontos[j].SetOpacity(0.15 + 0.85 * v * a);
+        j++;
+    }
+}
+Plymouth.SetRefreshFunction(atualizar);
+
+# ---------------------------------------------------------- senha
+
+caixa.image = Image("caixa.png");
+bala_imagem = Image("bala.png");
+caixa.sprite = Sprite(caixa.image);
+caixa.sprite.SetX(cx - caixa.image.GetWidth() / 2);
+caixa.sprite.SetY(cy + logo.image.GetHeight() / 2 + 90);
+caixa.sprite.SetZ(20);
+caixa.sprite.SetOpacity(0);
+pergunta.sprite = Sprite();
+pergunta.sprite.SetZ(20);
+balas = 0;
+
+fun mostrar_senha(texto, quantidade) {
+    caixa.sprite.SetOpacity(1);
+    global.pergunta.image = Image.Text(texto, 0.90, 0.91, 0.95);
+    pergunta.sprite.SetImage(pergunta.image);
+    pergunta.sprite.SetX(cx - pergunta.image.GetWidth() / 2);
+    pergunta.sprite.SetY(caixa.sprite.GetY() - pergunta.image.GetHeight() - 10);
+    pergunta.sprite.SetOpacity(1);
+    k = 0;
+    while (k < balas) {
+        global.bala[k].SetOpacity(0);
+        k++;
+    }
+    k = 0;
+    while (k < quantidade && k < 24) {
+        global.bala[k] = Sprite(bala_imagem);
+        bala[k].SetX(caixa.sprite.GetX() + 16 + k * 14);
+        bala[k].SetY(caixa.sprite.GetY() + caixa.image.GetHeight() / 2 - 6);
+        bala[k].SetZ(21);
+        k++;
+    }
+    global.balas = k;
+}
+Plymouth.SetDisplayPasswordFunction(mostrar_senha);
+
+fun modo_normal() {
+    caixa.sprite.SetOpacity(0);
+    pergunta.sprite.SetOpacity(0);
+    k = 0;
+    while (k < balas) {
+        bala[k].SetOpacity(0);
+        k++;
+    }
+}
+Plymouth.SetDisplayNormalFunction(modo_normal);
+
+# ---------------------------------------------------------- mensagens
+
+mensagem.sprite = Sprite();
+mensagem.sprite.SetZ(30);
+
+fun mostrar_mensagem(texto) {
+    global.mensagem.image = Image.Text(texto, 0.55, 0.58, 0.68);
+    mensagem.sprite.SetImage(mensagem.image);
+    mensagem.sprite.SetX(cx - mensagem.image.GetWidth() / 2);
+    mensagem.sprite.SetY(Window.GetY() + altura - 60);
+}
+Plymouth.SetMessageFunction(mostrar_mensagem);
