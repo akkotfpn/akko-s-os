@@ -1,0 +1,281 @@
+[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01HBdsDxe: loading Boot0001 "UEFI QEMU DVD-ROM QM00001 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)
+BdsDxe: starting Boot0001 "UEFI QEMU DVD-ROM QM00001 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)
+[0;21;33mSpeculative Return Stack Overflow: IBPB-extending microcode not applied![0m
+[0;21;33mSpeculative Return Stack Overflow: WARNING: See https://kernel.org/doc/html/latest/admin-guide/hw-vuln/srso.html for mitigation options.[0m
+[0;21;33mamd_pstate: The CPPC feature is supported but currently disabled by the BIOS.[0m
+[0;21;33mPlease enable it if your BIOS has the CPPC option.[0m
+[0;21;33mamd_pstate: the _CPC object is not present in SBIOS or ACPI disabled[0m
+[0;21;33mata1.00: LPM support broken, forcing max_power[0m
+[0;21;33mata3.00: LPM support broken, forcing max_power[0m
+[0;21;33mata3.00: LPM support broken, forcing max_power[0m
+[0;21;33mata1.00: LPM support broken, forcing max_power[0m
+[!p]104[?7h[[0;32m  OK  [0m] Mounted [0;1;39mproc-sys-fs-binfmt_misc.mo…[0mxecutable File Formats File System.
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-tmpfiles-setup.se…[0mreate System Files and Directories.
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-binfmt.service[0m - Set Up Additional Binary Formats.
+         Starting [0;1;39mldconfig.service[0m - Rebuild Dynamic Linker Cache...
+         Starting [0;1;39mlive-config.service[0m - liv…e boot process (late userspace)....
+         Starting [0;1;39msystemd-journal-catalog-u…ervice[0m - Rebuild Journal Catalog...
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-journal-catalog-u….service[0m - Rebuild Journal Catalog.
+[[0;32m  OK  [0m] Finished [0;1;39mconsole-setup.service[0m - Set console font and keymap.
+[[0;32m  OK  [0m] Finished [0;1;39mapparmor.service[0m - Load AppArmor profiles.
+         Starting [0;1;39mnetworking.service[0m - Raise network interfaces...
+[[0;32m  OK  [0m] Finished [0;1;39mnetworking.service[0m - Raise network interfaces.
+[[0;32m  OK  [0m] Finished [0;1;39mlive-config.service[0m - liv…the boot process (late userspace)..
+[[0;32m  OK  [0m] Finished [0;1;39mldconfig.service[0m - Rebuild Dynamic Linker Cache.
+         Starting [0;1;39msystemd-update-done.service[0m - Update is Completed...
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-update-done.service[0m - Update is Completed.
+[[0;32m  OK  [0m] Reached target [0;1;39msysinit.target[0m - System Initialization.
+[[0;32m  OK  [0m] Started [0;1;39mapt-daily.timer[0m - Daily apt download activities.
+[[0;32m  OK  [0m] Started [0;1;39mapt-daily-upgrade.timer[0m - …y apt upgrade and clean activities.
+[[0;32m  OK  [0m] Started [0;1;39mdpkg-db-backup.timer[0m - Daily dpkg database backup timer.
+[[0;32m  OK  [0m] Started [0;1;39me2scrub_all.timer[0m - Period…Metadata Check for All Filesystems.
+[[0;32m  OK  [0m] Started [0;1;39mfstrim.timer[0m - Discard unused filesystem blocks once a week.
+[[0;32m  OK  [0m] Started [0;1;39mlogrotate.timer[0m - Daily rotation of log files.
+[[0;32m  OK  [0m] Started [0;1;39msystemd-tmpfiles-clean.tim…[0my Cleanup of Temporary Directories.
+[[0;32m  OK  [0m] Reached target [0;1;39mtimers.target[0m - Timer Units.
+[[0;32m  OK  [0m] Listening on [0;1;39mavahi-daemon.socket[0m -…DNS/DNS-SD Stack Activation Socket.
+[[0;32m  OK  [0m] Listening on [0;1;39mdbus.socket[0m - D-Bus System Message Bus Socket.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-hostnamed.socket[0m - Hostname Service Socket.
+[[0;32m  OK  [0m] Listening on [0;1;39muuidd.socket[0m - UUID daemon activation socket.
+[[0;32m  OK  [0m] Reached target [0;1;39msockets.target[0m - Socket Units.
+[[0;32m  OK  [0m] Reached target [0;1;39mbasic.target[0m - Basic System.
+         Starting [0;1;39mavahi-daemon.service[0m - Avahi mDNS/DNS-SD Stack...
+[[0;32m  OK  [0m] Started [0;1;39mcron.service[0m - Regular background program processing daemon.
+         Starting [0;1;39mdbus.service[0m - D-Bus System Message Bus...
+         Starting [0;1;39me2scrub_reap.service[0m - Re…ne ext4 Metadata Check Snapshots...
+         Starting [0;1;39mnvidia-persistenced.service[0m - NVIDIA Persistence Daemon...
+         Starting [0;1;39mpolkit.service[0m - Authorization Manager...
+         Starting [0;1;39mswitcheroo-control.servic…[0mSwitcheroo Control Proxy service...
+         Starting [0;1;39msystemd-logind.service[0m - User Login Management...
+         Starting [0;1;39mudisks2.service[0m - Disk Manager...
+         Starting [0;1;39mzramswap.service[0m - Linux zramswap setup...
+[[0;32m  OK  [0m] Started [0;1;39mdbus.service[0m - D-Bus System Message Bus.
+         Starting [0;1;39mNetworkManager.service[0m - Network Manager...
+         Starting [0;1;39mwpa_supplicant.service[0m - WPA supplicant...
+[[0;1;31mFAILED[0m] Failed to start [0;1;39mnvidia-persistence…ervice[0m - NVIDIA Persistence Daemon.
+See 'systemctl status nvidia-persistenced.service' for details.
+[[0;32m  OK  [0m] Started [0;1;39mavahi-daemon.service[0m - Avahi mDNS/DNS-SD Stack.
+[[0;32m  OK  [0m] Finished [0;1;39me2scrub_reap.service[0m - Re…line ext4 Metadata Check Snapshots.
+[[0;32m  OK  [0m] Started [0;1;39mswitcheroo-control.service[0m - Switcheroo Control Proxy service.
+         Starting [0;1;39malsa-restore.service[0m - Save/Restore Sound Card State...
+[[0;32m  OK  [0m] Finished [0;1;39malsa-restore.service[0m - Save/Restore Sound Card State.
+[[0;32m  OK  [0m] Reached target [0;1;39msound.target[0m - Sound Card.
+[[0;32m  OK  [0m] Started [0;1;39mwpa_supplicant.service[0m - WPA supplicant.
+[[0;32m  OK  [0m] Started [0;1;39msystemd-logind.service[0m - User Login Management.
+[[0;32m  OK  [0m] Started [0;1;39mpolkit.service[0m - Authorization Manager.
+[[0;32m  OK  [0m] Finished [0;1;39mzramswap.service[0m - Linux zramswap setup.
+         Starting [0;1;39mModemManager.service[0m - Modem Manager...
+         Starting [0;1;39msystemd-hostnamed.service[0m - Hostname Service...
+[[0;32m  OK  [0m] Started [0;1;39mudisks2.service[0m - Disk Manager.
+[[0;32m  OK  [0m] Started [0;1;39msystemd-hostnamed.service[0m - Hostname Service.
+[[0;32m  OK  [0m] Started [0;1;39mModemManager.service[0m - Modem Manager.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-rfkill.socket[0m…ll Switch Status /dev/rfkill Watch.
+         Starting [0;1;39mNetworkManager-dispatcher…[0manager Script Dispatcher Service...
+[[0;32m  OK  [0m] Started [0;1;39mNetworkManager.service[0m - Network Manager.
+[[0;32m  OK  [0m] Reached target [0;1;39mnetwork.target[0m - Network.
+         Starting [0;1;39msystemd-user-sessions.service[0m - Permit User Sessions...
+[0;21;33mIPv4: martian source 255.255.255.255 from 10.0.2.2, on dev enp0s2[0m
+[0;21;33mll header: 00000000: ff ff ff ff ff ff 52 55 0a 00 02 02 08 00[0m
+[0;21;33mIPv4: martian source 255.255.255.255 from 10.0.2.2, on dev enp0s2[0m
+[0;21;33mll header: 00000000: ff ff ff ff ff ff 52 55 0a 00 02 02 08 00[0m
+[[0;32m  OK  [0m] Started [0;1;39mNetworkManager-dispatcher.…[0m Manager Script Dispatcher Service.
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-user-sessions.service[0m - Permit User Sessions.
+         Starting [0;1;39mlightdm.service[0m - Light Display Manager...
+         Starting [0;1;39mplymouth-quit-wait.servic…[0md until boot process finishes up...
+AKKOS-TESTE-INICIO
+AKKOS-SHOT|01-area-de-trabalho
+AKKOS-CHECK|os_release|ok|PRETTY_NAME="Akko's OS 2026.11.09.20 (Debian 13 trixie)" NAME="Akko's OS" ID=akkos 
+AKKOS-CHECK|os_release_nome|ok| 
+AKKOS-CHECK|sessao|ok|1705 1757 1754 1755 
+AKKOS-CHECK|sessao_akkos|ok|Desktop= Type=tty State=online 
+AKKOS-CHECK|idioma|ok|LANG=pt_BR.UTF-8 LANG=pt_BR.UTF-8 pt_BR.utf8 
+AKKOS-CHECK|plymouth_tema|ok|akkos 
+AKKOS-CHECK|sons_gerados|ok|6 boot_chime.wav click.wav error.wav notify.wav shutdown.wav window_open.wav 
+AKKOS-CHECK|pipewire|ok| ├─ Sinks:  │  *   52. Áudio interno Estéreo analógico  [vol: 0.40]  │    ├─ Sources:  ├─ Sinks:  │   
+AKKOS-CHECK|som_notify|ok| 
+AKKOS-CHECK|som_click|ok| 
+AKKOS-CHECK|rede_nm|ok|connected:full 
+AKKOS-CHECK|rede_ip|ok|enp0s2:connected:Conexão cabeada 1 lo:connected (externally):lo lo               UNKNOWN        127.0.0.1/8  enp0s2           UP             10.0.2.15/24  
+AKKOS-CHECK|internet_tls|ok|http=200 tls_verificacao=0 tempo=0.067653s 
+AKKOS-CHECK|dns|ok|140.82.114.3    github.com 
+AKKOS-CHECK|firewall_regras|ok|		type filter hook input priority filter; policy drop; 		type filter hook forward priority filter; policy drop; 		type filter hook output priority filter; policy accept; 
+AKKOS-CHECK|firewall_ativo|ok|active 
+AKKOS-CHECK|sysctl|ok|2 1 2 1 1  
+AKKOS-CHECK|apparmor|ok|apparmor module is loaded. 134 profiles are loaded. 13 profiles are in enforce mode.    /usr/bin/pidgin 
+AKKOS-CHECK|firejail|ok|firejail version 0.9.74  Compile time support: 	- always force nonewprivs support is disabled 	- AppArmor support is enabled 	- AppImage support is enabled 	- chroot support is enabled 	- D-BUS proxy support is enabled 	- file transfer support is enabled 	- IDS support is enabled 	- Landlock support is enabled 	- networking support is enabled 	- output logging is enabled 	- overlayfs support is disabled 	- private-home support is enabled 	- private-lib support is disabled 	- private-cache and tmpfs as user enabled 	- sandbox check is enabled 	- SELinux support is enabled 	- user namespace supp
+AKKOS-CHECK|root_travado|ok|L 
+AKKOS-CHECK|firewall_local_responde|ok|200 
+AKKOS-FW-PRONTO
+AKKOS-CHECK|firewall_log|ok|16 
+AKKOS-CHECK|wine|ok|/usr/bin/wine wine-10.0 (Debian 10.0~repack-6) 
+AKKOS-CHECK|wine32|ok|ii  wine32:i386    10.0~repack-6 i386         Windows API implementation - 32-bit binary loader 
+AKKOS-CHECK|dxvk|ok|d3d10core.dll.a d3d10core.dll.so d3d11.dll.a d3d11.dll.so d3d8.dll.a d3d8.dll.so d3d9.dll.a d3d9.dll.so dxgi.dll.a dxgi.dll.so /usr/bin/dxvk-setup 
+AKKOS-CHECK|binfmt_exe|ok|enabled interpreter /usr/bin/win-launcher flags:  offset 0 magic 4d5a 
+AKKOS-CHECK|flatpak|ok|flathub 
+AKKOS-CHECK|appimage_fuse|ok|ii  libfuse2t64:amd64 2.9.9-9      amd64        Filesystem in Userspace (library) 
+AKKOS-CHECK|navegador_politica|ok|file:///usr/share/akkos/inicio/index.html 
+AKKOS-CHECK|navegador_sandbox|ok|/usr/bin/firejail Exec=akko-navegador %U 
+AKKOS-CHECK|janela_arquivos|ok|0x01a00007  0 akkos akkos 
+AKKOS-SHOT|02-explorador
+AKKOS-SHOT|03-explorador-lista
+AKKOS-CHECK|janela_rede|ok|0x01a00007  0 akkos Rede 
+AKKOS-SHOT|04-rede
+AKKOS-SHOT|05-menu
+AKKOS-CHECK|area_de_trabalho|ok|1758 0x01400003 -1 akkos Área de Trabalho 
+AKKOS-CHECK|atalhos_area_de_trabalho|ok|akko-navegador.desktop akko-tarefas.desktop xfce4-terminal.desktop 
+AKKOS-CHECK|janela_este_computador|ok|0x02000007  0 akkos Este Computador 
+AKKOS-SHOT|05b-este-computador
+AKKOS-CHECK|janela_tarefas|ok|0x02000007  0 akkos Gerenciador de Tarefas 
+AKKOS-SHOT|05c-gerenciador-de-tarefas
+AKKOS-CHECK|calamares_marca|ok|branding: akkos 1 
+AKKOS-CHECK|janela_instalador|ok|0x02000016  0 calamares.calamares   akkos Instalador Akko's OS 
+AKKOS-SHOT|05d-instalador
+Terminado
+AKKOS-CHECK|janela_persistencia|ok|0x02000003  0 akkos Guardar alterações 
+AKKOS-SHOT|05e-guardar-alteracoes
+AKKOS-CHECK|gpu_mesa|ok|26.1.6-1~bpo13+1 26.1.6-1~bpo13+1 
+AKKOS-CHECK|gpu_nvidia_modulo|ok|550.163.01 
+AKKOS-CHECK|gpu_nvidia_32bits|ok|ii  nvidia-driver-libs:i386 550.163.01-2 i386         NVIDIA metapackage (OpenGL/GLX/EGL/GLES libraries) 
+AKKOS-CHECK|gpu_escolha|ok|active nenhuma placa NVIDIA 
+AKKOS-CHECK|gpu_vulkan|ok|	deviceName         = llvmpipe (LLVM 19.1.7, 256 bits) 	driverName         = llvmpipe 
+AKKOS-CHECK|zram|ok|/dev/zram0 2,3G 100 
+AKKOS-CHECK|espaco_live|ok|overlay 2,9G 1,5G 1,5G 50% / tmpfs rw,noatime,size=3006876k,mode=755,inode64 
+AKKOS-CHECK|janela_navegador|ok|0x01a00003  0 chromium.Chromium     akkos Início — Akko's OS - Chromium 
+AKKOS-CHECK|navegador_pagina_inicial|ok|0x01a00003  0 akkos Início — Akko's OS - Chromium 
+AKKOS-CHECK|navegador_em_sandbox|ok|7314:akko::firejail --quiet --profile=chromium /usr/bin/chromium  
+AKKOS-CHECK|diag_chromium_apparmor|ok|/usr/bin/chromium: 9: [: 2052689920: unexpected operator [7:7:1109/193755.534708:FATAL:sandbox/linux/services/credentials.cc:137] Check failed: . : Permissão negada (13) rc=0 nov 09 19:37:55 akkos kernel: audit: type=1400 audit(1794263875.527:142): apparmor="DENIED" operation="userns_create" class="namespace" profile="firejail-default" pid=7572 comm="chromium" requested="userns_create" denied="userns_create" nov 09 19:37:55 akkos kernel: audit: type=1400 audit(1794263875.527:143): apparmor="DENIED" operation="signal" class="signal" profile="firejail-default" pid=7572 comm="chromium" requested
+AKKOS-SHOT|06-navegador
+AKKOS-CHECK|wine_prefixo|ok|dosdevices drive_c system.reg userdef.reg user.reg winetricks.log 2026-11-09T19:37:03-03:00 andalemo.ttf arialbd.ttf arialbi.ttf 
+AKKOS-CHECK|wine_icu|ok|/home/akko/.local/share/akkos/wine/prefixos/padrao/drive_c/windows/globalization/ICU/icudtl.dat /home/akko/.local/share/akkos/wine/prefixos/padrao/drive_c/windows/system32/icuuc.dll /home/akko/.local/share/akkos/wine/prefixos/padrao/drive_c/windows/syswow64/icuuc.dll 
+AKKOS-CHECK|wine_dxvk|ok|-> /usr/lib/dxvk/wine64/d3d11.dll.so 
+AKKOS-SHOT|07-windows-notepad
+AKKOS-CHECK|janela_windows|ok|0x02400001  0 notepad.exe.notepad.exe  akkos Sem nome - Bloco de Notas 
+AKKOS-CHECK|windows_em_sandbox|ok|7700:akko::firejail --quiet --profile=akkos-wine --whitelist=/home/akko/.local/share/akkos/wine/prefixos/padrao/drive_c/windows --whitelist=/home/akko/.local/share/akkos/wine/prefixos/padrao -- /usr/bin/wine /home/akko/.local/share/akkos/wine/prefixos/padrao/drive_c/windows/notepad.exe  
+AKKOS-CHECK|windows_apparmor|ok|firejail-default//&unconfined (enforce) 
+AKKOS-CHECK|windows_log|ok|notepad-20261109-193801.log prefixo-padrao.log comando:  firejail --quiet --profile=akkos-wine --whitelist=/home/akko/.local/share/akkos/wine/prefixos/padrao/drive_c/windows --whitelist=/home/akko/.local/share/akkos/wine/prefixos/padrao -- /usr/bin/wine /home/akko/.local/share/akkos/wine/prefixos/padrao/drive_c/windows/notepad.exe wine:     wine-10.0 (Debian 10.0~repack-6) == 002c:err:winediag:getaddrinfo Failed to resolve your host name IP 
+AKKOS-CHECK|windows_fechou_sem_erro|ok| 
+AKKOS-CHECK|qbittorrent_download|ok|-rw-r--r-- 1 akko akko 50030660 nov  9 19:40 /home/akko/Downloads/qbittorrent_5.3.0_x64_setup.exe 
+AKKOS-CHECK|espaco_antes|ok|overlay 2,9G 1,5G 1,4G 52% / 
+AKKOS-CHECK|qbittorrent_instalado|ok|-rwxr-xr-x 1 akko akko 46916608 out 18 19:15 /home/akko/.local/share/akkos/wine/prefixos/padrao/drive_c/Program Files/qBittorrent/qbittorrent.exe 
+AKKOS-CHECK|espaco_depois|ok|overlay 2,9G 1,8G 1,1G 63% / 
+AKKOS-CHECK|diag_qbittorrent_sandbox|ok|00e8:err:winediag:ntlm_check_version ntlm_auth was not found. Make sure that ntlm_auth >= 3.0.25 is in your path. Usually, you can find it in the winbind package of your distribution. sandbox:  firejail/akkos-wine 8271 bash /usr/bin/win-launcher --modo app /home/akko/.local/share/akkos/wine/pr 8316 firejail --quiet --profile=akkos-wine --whitelist=/home/akko/.local/share/a 8317 firejail --quiet --profile=akkos-wine --whitelist=/home/akko/.local/share/a 8382 C:\Program Files\qBittorrent\qbittorrent.exe 
+AKKOS-SHOT|07a-qbittorrent-noticia-legal
+AKKOS-CHECK|janela_qbittorrent|ok|0x02400008  0 akkos qBittorrent v5.3.0 
+AKKOS-SHOT|07b-qbittorrent
+AKKOS-CHECK|umu_launcher|ok|umu-launcher version 1.4.4 (3.13.5 (main, Aug 10 2026, 12:06:59) [GCC 14.2.0]) 
+AKKOS-CHECK|janela_escolha|ok|0x01a00008  0 akkos Abrir programa Windows 
+AKKOS-SHOT|08-escolha-app-jogo
+AKKOS-CHECK|apparmor_confinando|ok|apparmor module is loaded. 134 profiles are loaded. 13 profiles are in enforce mode.    /usr/bin/pidgin    /usr/bin/pidgin//sanitized_helper    /usr/bin/totem    /usr/bin/totem-audio-preview    /usr/bin/totem-video-thumbnailer    /usr/bin/totem//sanitized_helper    /usr/lib/x86_64-linux-gnu/lightdm/lightdm-guest-session    /usr/lib/x86_64-linux-gnu/lightdm/lightdm-guest-session//chromium    apt-cacher-ng 
+AKKOS-CHECK|escolha_cancelada|ok| 
+AKKOS-SHOT|09-final
+AKKOS-TESTE-FIM
+[0;21;33mSpeculative Return Stack Overflow: IBPB-extending microcode not applied![0m
+[0;21;33mSpeculative Return Stack Overflow: WARNING: See https://kernel.org/doc/html/latest/admin-guide/hw-vuln/srso.html for mitigation options.[0m
+[0;21;33mamd_pstate: The CPPC feature is supported but currently disabled by the BIOS.[0m
+[0;21;33mPlease enable it if your BIOS has the CPPC option.[0m
+[0;21;33mamd_pstate: the _CPC object is not present in SBIOS or ACPI disabled[0m
+[0;21;33mata1.00: LPM support broken, forcing max_power[0m
+[0;21;33mata3.00: LPM support broken, forcing max_power[0m
+[0;21;33mata3.00: LPM support broken, forcing max_power[0m
+[0;21;33mata1.00: LPM support broken, forcing max_power[0m
+[0;21;33mIPv4: martian source 255.255.255.255 from 10.0.2.2, on dev enp0s2[0m
+[0;21;33mll header: 00000000: ff ff ff ff ff ff 52 55 0a 00 02 02 08 00[0m
+[0;21;33mIPv4: martian source 255.255.255.255 from 10.0.2.2, on dev enp0s2[0m
+[0;21;33mll header: 00000000: ff ff ff ff ff ff 52 55 0a 00 02 02 08 00[0m
+[0;21;33mkauditd_printk_skb: 124 callbacks suppressed[0m
+[0;21;33mIPv4: martian source 10.0.2.15 from 127.0.0.1, on dev enp0s2[0m
+[0;21;33mll header: 00000000: 52 54 00 12 34 56 52 55 0a 00 02 02 08 00[0m
+[0;21;33mIPv4: martian source 10.0.2.15 from 127.0.0.1, on dev enp0s2[0m
+[0;21;33mll header: 00000000: 52 54 00 12 34 56 52 55 0a 00 02 02 08 00[0m
+[0;21;33mIPv4: martian source 10.0.2.15 from 127.0.0.1, on dev enp0s2[0m
+[0;21;33mll header: 00000000: 52 54 00 12 34 56 52 55 0a 00 02 02 08 00[0m
+[0;21;33mIPv4: martian source 10.0.2.15 from 127.0.0.1, on dev enp0s2[0m
+[0;21;33mll header: 00000000: 52 54 00 12 34 56 52 55 0a 00 02 02 08 00[0m
+[0;21;33mIPv4: martian source 10.0.2.15 from 127.0.0.1, on dev enp0s2[0m
+[0;21;33mll header: 00000000: 52 54 00 12 34 56 52 55 0a 00 02 02 08 00[0m
+[0;21;33mIPv4: martian source 10.0.2.15 from 127.0.0.1, on dev enp0s2[0m
+[0;21;33mll header: 00000000: 52 54 00 12 34 56 52 55 0a 00 02 02 08 00[0m
+[0;21;33mIPv4: martian source 10.0.2.15 from 127.0.0.1, on dev enp0s2[0m
+[0;21;33mll header: 00000000: 52 54 00 12 34 56 52 55 0a 00 02 02 08 00[0m
+[0;21;33mIPv4: martian source 10.0.2.15 from 127.0.0.1, on dev enp0s2[0m
+[0;21;33mll header: 00000000: 52 54 00 12 34 56 52 55 0a 00 02 02 08 00[0m
+[[0;32m  OK  [0m] Stopped [0;1;39muser@1000.service[0m - User Manager for UID 1000.
+[[0;32m  OK  [0m] Deactivated swap [0;1;39mdev-disk-by\x2duu…[0ma23010-8bc2-49f4-9612-f0d1a4b90577.
+[[0;32m  OK  [0m] Deactivated swap [0;1;39mdev-disk-by\x2ddi…-14.swap[0m - /dev/disk/by-diskseq/14.
+[[0;32m  OK  [0m] Deactivated swap [0;1;39mdev-zram0.swap[0m - /dev/zram0.
+[[0;32m  OK  [0m] Started [0;1;39mplymouth-poweroff.service[0m - Show Plymouth Power Off Screen.
+         Stopping [0;1;39msystemd-user-sessions.service[0m - Permit User Sessions...
+         Stopping [0;1;39muser-runtime-dir@1000.ser…[0mRuntime Directory /run/user/1000...
+[[0;32m  OK  [0m] Unmounted [0;1;39mrun-user-1000.mount[0m - /run/user/1000.
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-user-sessions.service[0m - Permit User Sessions.
+[[0;32m  OK  [0m] Stopped [0;1;39muser-runtime-dir@1000.serv…[0mr Runtime Directory /run/user/1000.
+[[0;32m  OK  [0m] Removed slice [0;1;39muser-1000.slice[0m - User Slice of UID 1000.
+[[0;32m  OK  [0m] Stopped target [0;1;39mnetwork.target[0m - Network.
+[[0;32m  OK  [0m] Stopped target [0;1;39mremote-fs.target[0m - Remote File Systems.
+         Stopping [0;1;39mNetworkManager.service[0m - Network Manager...
+         Stopping [0;1;39mnetworking.service[0m - Raise network interfaces...
+         Stopping [0;1;39msystemd-logind.service[0m - User Login Management...
+         Stopping [0;1;39mwpa_supplicant.service[0m - WPA supplicant...
+[[0;32m  OK  [0m] Stopped [0;1;39mwpa_supplicant.service[0m - WPA supplicant.
+[[0;32m  OK  [0m] Stopped [0;1;39mnetworking.service[0m - Raise network interfaces.
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-logind.service[0m - User Login Management.
+[[0;32m  OK  [0m] Stopped [0;1;39mNetworkManager.service[0m - Network Manager.
+[[0;32m  OK  [0m] Stopped target [0;1;39mnetwork-pre.target[0m - Preparation for Network.
+         Stopping [0;1;39mdbus.service[0m - D-Bus System Message Bus...
+         Stopping [0;1;39mnftables.service[0m - nftables...
+[[0;32m  OK  [0m] Stopped [0;1;39mdbus.service[0m - D-Bus System Message Bus.
+[[0;32m  OK  [0m] Stopped [0;1;39mnftables.service[0m - nftables.
+[[0;32m  OK  [0m] Stopped [0;1;39mzramswap.service[0m - Linux zramswap setup.
+[[0;32m  OK  [0m] Stopped target [0;1;39mbasic.target[0m - Basic System.
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-ask-password-plymo…[0mquests to Plymouth Directory Watch.
+[[0;32m  OK  [0m] Stopped target [0;1;39mpaths.target[0m - Path Units.
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-ask-password-wall.…[0md Requests to Wall Directory Watch.
+[[0;32m  OK  [0m] Stopped target [0;1;39mslices.target[0m - Slice Units.
+[[0;32m  OK  [0m] Removed slice [0;1;39muser.slice[0m - User and Session Slice.
+[[0;32m  OK  [0m] Stopped target [0;1;39msockets.target[0m - Socket Units.
+[[0;32m  OK  [0m] Closed [0;1;39mavahi-daemon.socket[0m - Avahi…DNS/DNS-SD Stack Activation Socket.
+[[0;32m  OK  [0m] Closed [0;1;39mdbus.socket[0m - D-Bus System Message Bus Socket.
+[[0;32m  OK  [0m] Closed [0;1;39msystemd-hostnamed.socket[0m - Hostname Service Socket.
+[[0;32m  OK  [0m] Closed [0;1;39muuidd.socket[0m - UUID daemon activation socket.
+[[0;32m  OK  [0m] Stopped target [0;1;39msysinit.target[0m - System Initialization.
+         Stopping [0;1;39msystemd-binfmt.service[0m - Set Up Additional Binary Formats...
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-sysctl.service[0m - Apply Kernel Variables.
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-modules-load.service[0m - Load Kernel Modules.
+         Stopping [0;1;39msystemd-timesyncd.service[0m - Network Time Synchronization...
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-update-done.service[0m - Update is Completed.
+[[0;32m  OK  [0m] Stopped [0;1;39mldconfig.service[0m - Rebuild Dynamic Linker Cache.
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-journal-catalog-up….service[0m - Rebuild Journal Catalog.
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-tmpfiles-setup.ser…[0mreate System Files and Directories.
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-binfmt.service[0m - Set Up Additional Binary Formats.
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-timesyncd.service[0m - Network Time Synchronization.
+[[0;32m  OK  [0m] Unset automount [0;1;39mproc-sys-fs-binfmt…[0mormats File System Automount Point.
+[[0;32m  OK  [0m] Stopped target [0;1;39mlocal-fs.target[0m - Local File Systems.
+         Unmounting [0;1;39mrun-firejail-firejail.r…[0m - /run/firejail/firejail.ro.dir...
+         Unmounting [0;1;39mrun-firejail-firejail.r…[0m- /run/firejail/firejail.ro.file...
+         Unmounting [0;1;39mrun-live-medium.mount[0m - /run/live/medium...
+         Unmounting [0;1;39mrun-live-overlay.mount[0m - /run/live/overlay...
+         Unmounting [0;1;39mrun-live-rootfs-filesys…[0m/live/rootfs/filesystem.squashfs...
+         Unmounting [0;1;39mrun-lock.mount[0m - Legacy Locks Directory /run/lock...
+         Unmounting [0;1;39mtmp.mount[0m - /tmp...
+[[0;32m  OK  [0m] Unmounted [0;1;39mrun-firejail-firejail.ro…nt[0m - /run/firejail/firejail.ro.dir.
+[[0;32m  OK  [0m] Unmounted [0;1;39mrun-firejail-firejail.ro…t[0m - /run/firejail/firejail.ro.file.
+[[0;1;31mFAILED[0m] Failed unmounting [0;1;39mrun-live-medium.mount[0m - /run/live/medium.
+[[0;32m  OK  [0m] Unmounted [0;1;39mrun-live-overlay.mount[0m - /run/live/overlay.
+[[0;32m  OK  [0m] Unmounted [0;1;39mrun-live-rootfs-filesyst…[0mun/live/rootfs/filesystem.squashfs.
+[[0;32m  OK  [0m] Unmounted [0;1;39mrun-lock.mount[0m - Legacy Locks Directory /run/lock.
+[[0;32m  OK  [0m] Unmounted [0;1;39mtmp.mount[0m - /tmp.
+[[0;32m  OK  [0m] Stopped target [0;1;39mlocal-fs-pre.target[0m…Preparation for Local File Systems.
+[[0;32m  OK  [0m] Stopped target [0;1;39mswap.target[0m - Swaps.
+[[0;32m  OK  [0m] Reached target [0;1;39mumount.target[0m - Unmount All Filesystems.
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-tmpfiles-setup-dev…[0mCreate Static Device Nodes in /dev.
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-sysusers.service[0m - Create System Users.
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-remount-fs.service[0m…mount Root and Kernel File Systems.
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-tmpfiles-setup-dev…[0mic Device Nodes in /dev gracefully.
+[[0;32m  OK  [0m] Reached target [0;1;39mshutdown.target[0m - System Shutdown.
+[[0;32m  OK  [0m] Reached target [0;1;39mfinal.target[0m - Late Shutdown Services.
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-poweroff.service[0m - System Power Off.
+[[0;32m  OK  [0m] Reached target [0;1;39mpoweroff.target[0m - System Power Off.
+[  328.345149] (sd-umount)[8775]: Failed to unmount /run/shutdown/mounts/e5ad970983e81d4e: Device or resource busy
+[  328.352507] systemd-shutdown[1]: Could not detach loopback /dev/loop0: Device or resource busy
+[  328.369765] systemd-shutdown[1]: Unable to finalize remaining file systems, loop devices, ignoring.
+[  328.982363] reboot: Power down

@@ -1,0 +1,317 @@
+{
+  "iso": "akkos-debian-2026.11.09.20-amd64.iso",
+  "tamanho_gb": 2.54,
+  "etapas": {
+    "funcional": {
+      "ok": true,
+      "detalhe": "5.6 min; teste concluído"
+    },
+    "uefi": {
+      "ok": true,
+      "detalhe": "prints do menu e do sistema; conferir visualmente"
+    },
+    "uefi-sb": {
+      "ok": true,
+      "detalhe": "prints do menu e do sistema; conferir visualmente"
+    },
+    "bios": {
+      "ok": true,
+      "detalhe": "prints do menu e do sistema; conferir visualmente"
+    }
+  },
+  "verificacoes": {
+    "os_release": {
+      "ok": true,
+      "detalhe": "PRETTY_NAME=\"Akko's OS 2026.11.09.20 (Debian 13 trixie)\" NAME=\"Akko's OS\" ID=akkos "
+    },
+    "os_release_nome": {
+      "ok": true,
+      "detalhe": " "
+    },
+    "sessao": {
+      "ok": true,
+      "detalhe": "1705 1757 1754 1755 "
+    },
+    "sessao_akkos": {
+      "ok": true,
+      "detalhe": "Desktop= Type=tty State=online "
+    },
+    "idioma": {
+      "ok": true,
+      "detalhe": "LANG=pt_BR.UTF-8 LANG=pt_BR.UTF-8 pt_BR.utf8 "
+    },
+    "plymouth_tema": {
+      "ok": true,
+      "detalhe": "akkos "
+    },
+    "sons_gerados": {
+      "ok": true,
+      "detalhe": "6 boot_chime.wav click.wav error.wav notify.wav shutdown.wav window_open.wav "
+    },
+    "pipewire": {
+      "ok": true,
+      "detalhe": " ├─ Sinks:  │  *   52. Áudio interno Estéreo analógico  [vol: 0.40]  │    ├─ Sources:  ├─ Sinks:  │   "
+    },
+    "som_notify": {
+      "ok": true,
+      "detalhe": " "
+    },
+    "som_click": {
+      "ok": true,
+      "detalhe": " "
+    },
+    "rede_nm": {
+      "ok": true,
+      "detalhe": "connected:full "
+    },
+    "rede_ip": {
+      "ok": true,
+      "detalhe": "enp0s2:connected:Conexão cabeada 1 lo:connected (externally):lo lo               UNKNOWN        127.0.0.1/8  enp0s2           UP             10.0.2.15/24  "
+    },
+    "internet_tls": {
+      "ok": true,
+      "detalhe": "http=200 tls_verificacao=0 tempo=0.067653s "
+    },
+    "dns": {
+      "ok": true,
+      "detalhe": "140.82.114.3    github.com "
+    },
+    "firewall_regras": {
+      "ok": true,
+      "detalhe": "\t\ttype filter hook input priority filter; policy drop; \t\ttype filter hook forward priority filter; policy drop; \t\ttype filter hook output priority filter; policy accept; "
+    },
+    "firewall_ativo": {
+      "ok": true,
+      "detalhe": "active "
+    },
+    "sysctl": {
+      "ok": true,
+      "detalhe": "2 1 2 1 1  "
+    },
+    "apparmor": {
+      "ok": true,
+      "detalhe": "apparmor module is loaded. 134 profiles are loaded. 13 profiles are in enforce mode.    /usr/bin/pidgin "
+    },
+    "firejail": {
+      "ok": true,
+      "detalhe": "firejail version 0.9.74  Compile time support: \t- always force nonewprivs support is disabled \t- AppArmor support is enabled \t- AppImage support is enabled \t- chroot support is enabled \t- D-BUS proxy support is enabled \t- file transfer support is enabled \t- IDS support is enabled \t- Landlock support is enabled \t- networking support is enabled \t- output logging is enabled \t- overlayfs support is disabled \t- private-home support is enabled \t- private-lib support is disabled \t- private-cache and tmpfs as user enabled \t- sandbox check is enabled \t- SELinux support is enabled \t- user namespace supp"
+    },
+    "root_travado": {
+      "ok": true,
+      "detalhe": "L "
+    },
+    "firewall_local_responde": {
+      "ok": true,
+      "detalhe": "200 "
+    },
+    "firewall_bloqueia_de_fora": {
+      "ok": true,
+      "detalhe": "conexão de fora bloqueada (TimeoutError)"
+    },
+    "firewall_log": {
+      "ok": true,
+      "detalhe": "16 "
+    },
+    "wine": {
+      "ok": true,
+      "detalhe": "/usr/bin/wine wine-10.0 (Debian 10.0~repack-6) "
+    },
+    "wine32": {
+      "ok": true,
+      "detalhe": "ii  wine32:i386    10.0~repack-6 i386         Windows API implementation - 32-bit binary loader "
+    },
+    "dxvk": {
+      "ok": true,
+      "detalhe": "d3d10core.dll.a d3d10core.dll.so d3d11.dll.a d3d11.dll.so d3d8.dll.a d3d8.dll.so d3d9.dll.a d3d9.dll.so dxgi.dll.a dxgi.dll.so /usr/bin/dxvk-setup "
+    },
+    "binfmt_exe": {
+      "ok": true,
+      "detalhe": "enabled interpreter /usr/bin/win-launcher flags:  offset 0 magic 4d5a "
+    },
+    "flatpak": {
+      "ok": true,
+      "detalhe": "flathub "
+    },
+    "appimage_fuse": {
+      "ok": true,
+      "detalhe": "ii  libfuse2t64:amd64 2.9.9-9      amd64        Filesystem in Userspace (library) "
+    },
+    "navegador_politica": {
+      "ok": true,
+      "detalhe": "file:///usr/share/akkos/inicio/index.html "
+    },
+    "navegador_sandbox": {
+      "ok": true,
+      "detalhe": "/usr/bin/firejail Exec=akko-navegador %U "
+    },
+    "janela_arquivos": {
+      "ok": true,
+      "detalhe": "0x01a00007  0 akkos akkos "
+    },
+    "janela_rede": {
+      "ok": true,
+      "detalhe": "0x01a00007  0 akkos Rede "
+    },
+    "area_de_trabalho": {
+      "ok": true,
+      "detalhe": "1758 0x01400003 -1 akkos Área de Trabalho "
+    },
+    "atalhos_area_de_trabalho": {
+      "ok": true,
+      "detalhe": "akko-navegador.desktop akko-tarefas.desktop xfce4-terminal.desktop "
+    },
+    "janela_este_computador": {
+      "ok": true,
+      "detalhe": "0x02000007  0 akkos Este Computador "
+    },
+    "janela_tarefas": {
+      "ok": true,
+      "detalhe": "0x02000007  0 akkos Gerenciador de Tarefas "
+    },
+    "calamares_marca": {
+      "ok": true,
+      "detalhe": "branding: akkos 1 "
+    },
+    "janela_instalador": {
+      "ok": true,
+      "detalhe": "0x02000016  0 calamares.calamares   akkos Instalador Akko's OS "
+    },
+    "janela_persistencia": {
+      "ok": true,
+      "detalhe": "0x02000003  0 akkos Guardar alterações "
+    },
+    "gpu_mesa": {
+      "ok": true,
+      "detalhe": "26.1.6-1~bpo13+1 26.1.6-1~bpo13+1 "
+    },
+    "gpu_nvidia_modulo": {
+      "ok": true,
+      "detalhe": "550.163.01 "
+    },
+    "gpu_nvidia_32bits": {
+      "ok": true,
+      "detalhe": "ii  nvidia-driver-libs:i386 550.163.01-2 i386         NVIDIA metapackage (OpenGL/GLX/EGL/GLES libraries) "
+    },
+    "gpu_escolha": {
+      "ok": true,
+      "detalhe": "active nenhuma placa NVIDIA "
+    },
+    "gpu_vulkan": {
+      "ok": true,
+      "detalhe": "\tdeviceName         = llvmpipe (LLVM 19.1.7, 256 bits) \tdriverName         = llvmpipe "
+    },
+    "zram": {
+      "ok": true,
+      "detalhe": "/dev/zram0 2,3G 100 "
+    },
+    "espaco_live": {
+      "ok": true,
+      "detalhe": "overlay 2,9G 1,5G 1,5G 50% / tmpfs rw,noatime,size=3006876k,mode=755,inode64 "
+    },
+    "janela_navegador": {
+      "ok": true,
+      "detalhe": "0x01a00003  0 chromium.Chromium     akkos Início — Akko's OS - Chromium "
+    },
+    "navegador_pagina_inicial": {
+      "ok": true,
+      "detalhe": "0x01a00003  0 akkos Início — Akko's OS - Chromium "
+    },
+    "navegador_em_sandbox": {
+      "ok": true,
+      "detalhe": "7314:akko::firejail --quiet --profile=chromium /usr/bin/chromium  "
+    },
+    "diag_chromium_apparmor": {
+      "ok": true,
+      "detalhe": "/usr/bin/chromium: 9: [: 2052689920: unexpected operator [7:7:1109/193755.534708:FATAL:sandbox/linux/services/credentials.cc:137] Check failed: . : Permissão negada (13) rc=0 nov 09 19:37:55 akkos kernel: audit: type=1400 audit(1794263875.527:142): apparmor=\"DENIED\" operation=\"userns_create\" class=\"namespace\" profile=\"firejail-default\" pid=7572 comm=\"chromium\" requested=\"userns_create\" denied=\"userns_create\" nov 09 19:37:55 akkos kernel: audit: type=1400 audit(1794263875.527:143): apparmor=\"DENIED\" operation=\"signal\" class=\"signal\" profile=\"firejail-default\" pid=7572 comm=\"chromium\" requested"
+    },
+    "wine_prefixo": {
+      "ok": true,
+      "detalhe": "dosdevices drive_c system.reg userdef.reg user.reg winetricks.log 2026-11-09T19:37:03-03:00 andalemo.ttf arialbd.ttf arialbi.ttf "
+    },
+    "wine_icu": {
+      "ok": true,
+      "detalhe": "/home/akko/.local/share/akkos/wine/prefixos/padrao/drive_c/windows/globalization/ICU/icudtl.dat /home/akko/.local/share/akkos/wine/prefixos/padrao/drive_c/windows/system32/icuuc.dll /home/akko/.local/share/akkos/wine/prefixos/padrao/drive_c/windows/syswow64/icuuc.dll "
+    },
+    "wine_dxvk": {
+      "ok": true,
+      "detalhe": "-> /usr/lib/dxvk/wine64/d3d11.dll.so "
+    },
+    "janela_windows": {
+      "ok": true,
+      "detalhe": "0x02400001  0 notepad.exe.notepad.exe  akkos Sem nome - Bloco de Notas "
+    },
+    "windows_em_sandbox": {
+      "ok": true,
+      "detalhe": "7700:akko::firejail --quiet --profile=akkos-wine --whitelist=/home/akko/.local/share/akkos/wine/prefixos/padrao/drive_c/windows --whitelist=/home/akko/.local/share/akkos/wine/prefixos/padrao -- /usr/bin/wine /home/akko/.local/share/akkos/wine/prefixos/padrao/drive_c/windows/notepad.exe  "
+    },
+    "windows_apparmor": {
+      "ok": true,
+      "detalhe": "firejail-default//&unconfined (enforce) "
+    },
+    "windows_log": {
+      "ok": true,
+      "detalhe": "notepad-20261109-193801.log prefixo-padrao.log comando:  firejail --quiet --profile=akkos-wine --whitelist=/home/akko/.local/share/akkos/wine/prefixos/padrao/drive_c/windows --whitelist=/home/akko/.local/share/akkos/wine/prefixos/padrao -- /usr/bin/wine /home/akko/.local/share/akkos/wine/prefixos/padrao/drive_c/windows/notepad.exe wine:     wine-10.0 (Debian 10.0~repack-6) == 002c:err:winediag:getaddrinfo Failed to resolve your host name IP "
+    },
+    "windows_fechou_sem_erro": {
+      "ok": true,
+      "detalhe": " "
+    },
+    "qbittorrent_download": {
+      "ok": true,
+      "detalhe": "-rw-r--r-- 1 akko akko 50030660 nov  9 19:40 /home/akko/Downloads/qbittorrent_5.3.0_x64_setup.exe "
+    },
+    "espaco_antes": {
+      "ok": true,
+      "detalhe": "overlay 2,9G 1,5G 1,4G 52% / "
+    },
+    "qbittorrent_instalado": {
+      "ok": true,
+      "detalhe": "-rwxr-xr-x 1 akko akko 46916608 out 18 19:15 /home/akko/.local/share/akkos/wine/prefixos/padrao/drive_c/Program Files/qBittorrent/qbittorrent.exe "
+    },
+    "espaco_depois": {
+      "ok": true,
+      "detalhe": "overlay 2,9G 1,8G 1,1G 63% / "
+    },
+    "diag_qbittorrent_sandbox": {
+      "ok": true,
+      "detalhe": "00e8:err:winediag:ntlm_check_version ntlm_auth was not found. Make sure that ntlm_auth >= 3.0.25 is in your path. Usually, you can find it in the winbind package of your distribution. sandbox:  firejail/akkos-wine 8271 bash /usr/bin/win-launcher --modo app /home/akko/.local/share/akkos/wine/pr 8316 firejail --quiet --profile=akkos-wine --whitelist=/home/akko/.local/share/a 8317 firejail --quiet --profile=akkos-wine --whitelist=/home/akko/.local/share/a 8382 C:\\Program Files\\qBittorrent\\qbittorrent.exe "
+    },
+    "janela_qbittorrent": {
+      "ok": true,
+      "detalhe": "0x02400008  0 akkos qBittorrent v5.3.0 "
+    },
+    "umu_launcher": {
+      "ok": true,
+      "detalhe": "umu-launcher version 1.4.4 (3.13.5 (main, Aug 10 2026, 12:06:59) [GCC 14.2.0]) "
+    },
+    "janela_escolha": {
+      "ok": true,
+      "detalhe": "0x01a00008  0 akkos Abrir programa Windows "
+    },
+    "apparmor_confinando": {
+      "ok": true,
+      "detalhe": "apparmor module is loaded. 134 profiles are loaded. 13 profiles are in enforce mode.    /usr/bin/pidgin    /usr/bin/pidgin//sanitized_helper    /usr/bin/totem    /usr/bin/totem-audio-preview    /usr/bin/totem-video-thumbnailer    /usr/bin/totem//sanitized_helper    /usr/lib/x86_64-linux-gnu/lightdm/lightdm-guest-session    /usr/lib/x86_64-linux-gnu/lightdm/lightdm-guest-session//chromium    apt-cacher-ng "
+    },
+    "escolha_cancelada": {
+      "ok": true,
+      "detalhe": " "
+    },
+    "audio_gravado": {
+      "ok": true,
+      "detalhe": "11.8 s de som em 307 s gravados; pico 17246 (44100 Hz, 2 ch, 16 bits)"
+    }
+  },
+  "grub_cfg_entradas": [
+    "${t_usar}",
+    "${t_guardar}",
+    "${t_instalar}",
+    "${t_video}",
+    "${t_ram}",
+    "${t_verificar}",
+    "${t_firmware}",
+    "${t_reiniciar}",
+    "${t_desligar}"
+  ],
+  "faltando": [],
+  "sucesso": true
+}
