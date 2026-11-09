@@ -53,7 +53,7 @@ check dns getent hosts github.com
 check firewall_regras bash -c "nft list ruleset | grep -E 'policy drop|policy accept' | tr -s ' '"
 check firewall_ativo systemctl is-active nftables
 check sysctl bash -c "sysctl -n kernel.kptr_restrict kernel.dmesg_restrict kernel.randomize_va_space net.ipv4.conf.all.rp_filter kernel.unprivileged_bpf_disabled | tr '\n' ' ' | grep -x '2 1 2 1 1 '"
-check apparmor bash -c "aa-status --enabled && aa-status 2>&1 | head -3 && aa-status | grep -c firejail-default || { systemctl status apparmor --no-pager -l 2>&1 | tail -12; journalctl -b -u apparmor --no-pager 2>&1 | tail -15; false; }"
+check apparmor bash -c "aa-status --enabled && aa-status 2>&1 | head -4 && aa-status | grep -q firejail-default || { systemctl status apparmor --no-pager -l 2>&1 | tail -12; journalctl -b -u apparmor --no-pager 2>&1 | tail -15; false; }"
 check firejail firejail --version
 check root_travado bash -c "passwd -S root | awk '{print \$2}' | grep -x L"
 # firewall de verdade: um servidor escutando; de fora (QEMU) não pode responder
@@ -101,6 +101,7 @@ sleep 15
 check janela_navegador asu bash -c "wmctrl -lx | grep -i chromium"
 check navegador_pagina_inicial asu bash -c "wmctrl -l | grep \"Akko's OS - Chromium\""
 check navegador_em_sandbox bash -c "firejail --list | grep -i chromium"
+check navegador_apparmor bash -c "for p in \$(pgrep -u $U -f chromium); do cat /proc/\$p/attr/current 2>/dev/null; echo; done | sort -u | grep -m3 firejail-default"
 shot 06-navegador
 asu bash -c "wmctrl -lx | awk 'tolower(\$3) ~ /chromium/ {print \$1}' | xargs -r -n1 wmctrl -i -c" 2>/dev/null
 sleep 2
@@ -116,6 +117,7 @@ for i in $(seq 1 90); do asu wmctrl -lx 2>/dev/null | grep -qi notepad && break;
 shot 07-windows-notepad
 check janela_windows asu bash -c "wmctrl -lx | grep -i notepad"
 check windows_em_sandbox bash -c "firejail --list | grep -i -E 'wine|notepad'"
+check windows_apparmor bash -c "for p in \$(pgrep -u $U -f notepad); do cat /proc/\$p/attr/current 2>/dev/null; echo; done | sort -u | grep -m3 firejail-default"
 check windows_log bash -c "ls -t /home/$U/.local/share/akkos/wine/logs/ | head -3; tail -4 \$(ls -t /home/$U/.local/share/akkos/wine/logs/notepad-*.log | head -1)"
 # fecha como uma pessoa fecharia (o wineserver -k fazia o lançador acusar erro)
 asu bash -c "wmctrl -c 'Bloco de Notas'" 2>/dev/null
@@ -132,6 +134,7 @@ check janela_escolha asu bash -c "wmctrl -l | grep 'Abrir programa Windows'"
 shot 08-escolha-app-jogo
 asu bash -c "wmctrl -c 'Abrir programa Windows'" 2>/dev/null   # fechar = cancelar
 sleep 2
+check apparmor_confinando bash -c "aa-status 2>/dev/null | grep -A200 'processes are in enforce mode' | grep -m5 -E 'firejail|chromium|wine' || aa-status 2>/dev/null | sed -n '1,12p'; true"
 check escolha_cancelada bash -c "! pgrep -u $U -f akko-win-escolha && ! pgrep -u $U -f 'wine.*notepad'"
 shot 09-final
 
