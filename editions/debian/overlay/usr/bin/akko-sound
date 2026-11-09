@@ -1,0 +1,15 @@
+#!/usr/bin/python3
+"""akko-sound <evento> [--esperar] — toca um som do Akko's OS.
+
+Eventos: boot_chime shutdown notify error click window_open
+--esperar  toca direto e só volta quando o som terminar (ex.: ao desligar)
+"""
+import sys
+
+sys.path.insert(0, "/usr/lib/akkos/python")
+from akkos_comum import EVENTOS, tocar  # noqa: E402
+
+if len(sys.argv) < 2 or sys.argv[1] not in EVENTOS:
+    print(__doc__, file=sys.stderr)
+    sys.exit(2)
+tocar(sys.argv[1], esperar="--esperar" in sys.argv)

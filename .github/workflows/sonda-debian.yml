@@ -13,23 +13,20 @@ jobs:
         run: |
           mkdir -p saida
           docker run --rm -v "$PWD/saida:/saida" debian:trixie bash -c '
-            set -x
             sed -i "s/Components: main/Components: main contrib non-free non-free-firmware/" /etc/apt/sources.list.d/debian.sources
-            dpkg --add-architecture i386
             apt-get update -qq
-            apt-get install -y -qq live-build >/dev/null
-            dpkg -l live-build | tail -1 > /saida/live-build-versao.txt
-            cd /usr/share/live/build/bootloaders && find . -type f | sort > /saida/bootloaders-arquivos.txt
-            for f in $(find grub-pc -type f -name "*.cfg" -o -type f -name "*.txt" | sort); do echo "===== $f"; cat "$f"; done > /saida/grub-pc-conteudo.txt 2>&1
-            ls /usr/lib/live/build/ > /saida/lb-scripts.txt
-            for p in wine wine64 wine32:i386 libwine dxvk dxvk-wine64 dxvk-wine32:i386 winetricks firejail firejail-profiles chromium fonts-inter fonts-noto-core papirus-icon-theme libfuse2t64 python3-gi gir1.2-gtk-3.0 gir1.2-wnck-3.0 gir1.2-nm-1.0 gir1.2-gtklayershell-0.1 openbox obconf lightdm lightdm-gtk-greeter dunst feh xfce4-terminal mousepad ristretto pipewire pipewire-pulse pipewire-alsa wireplumber pipewire-bin plymouth plymouth-themes plymouth-label nftables apparmor apparmor-utils apparmor-profiles apparmor-profiles-extra calamares calamares-settings-debian shim-signed grub-efi-amd64-signed gvfs gvfs-backends udisks2 network-manager wpasupplicant firmware-iwlwifi firmware-realtek firmware-atheros firmware-misc-nonfree firmware-brcm80211 firmware-linux-free amd64-microcode intel-microcode flatpak xdg-utils xserver-xorg xinit x11-xserver-utils python3-numpy policykit-1 polkitd lxpolkit pkexec network-manager-gnome gnome-keyring adwaita-icon-theme xdotool wmctrl live-config live-boot; do
-              v=$(apt-cache policy "$p" 2>/dev/null | awk "/Candidate/ {print \$2}")
-              printf "%-32s %s\n" "$p" "${v:-AUSENTE}"
-            done > /saida/pacotes.txt
-            cd /tmp && apt-get download -qq dxvk-wine64 dxvk 2>/dev/null; for d in *.deb; do echo "===== $d"; dpkg -c "$d" | awk "{print \$6}"; done > /saida/dxvk-arquivos.txt 2>&1
-            apt-get download -qq wine 2>/dev/null; for d in wine_*.deb; do dpkg -c "$d" | awk "{print \$6}"; done > /saida/wine-arquivos.txt 2>&1
-            apt-get download -qq firejail-profiles firejail 2>/dev/null; for d in firejail*.deb; do dpkg -c "$d" | awk "{print \$6}" | grep -E "wine|chromium|apparmor|firecfg" ; done > /saida/firejail-arquivos.txt 2>&1
-            cat /usr/share/live/build/VERSION 2>/dev/null >> /saida/live-build-versao.txt
+            apt-get install -y -qq live-build openbox firejail-profiles dxvk live-config plymouth plymouth-themes grub-common fonts-dejavu-core lightdm >/dev/null 2>&1
+            { echo "### dxvk-setup"; cat /usr/bin/dxvk-setup; echo; echo "### README.Debian"; zcat -f /usr/share/doc/dxvk/README.Debian*; } > /saida/dxvk-setup.txt 2>&1
+            { echo "### wine.profile"; cat /etc/firejail/wine.profile; echo "### chromium.profile"; cat /etc/firejail/chromium.profile; echo "### chromium-common.profile"; cat /etc/firejail/chromium-common.profile; } > /saida/firejail-perfis.txt 2>&1
+            cp /etc/xdg/openbox/rc.xml /saida/openbox-rc.xml; cp /etc/xdg/openbox/menu.xml /saida/openbox-menu.xml
+            ls /usr/lib/live/config/ > /saida/live-config-componentes.txt; for f in /usr/lib/live/config/*lightdm* /usr/lib/live/config/*user-setup* /usr/lib/live/config/*login* ; do echo "##### $f"; cat "$f"; done >> /saida/live-config-componentes.txt 2>&1
+            lb config --help > /saida/lb-config-help.txt 2>&1; man -P cat lb_config > /saida/lb-config-man.txt 2>&1 || zcat /usr/share/man/man1/lb_config.1.gz > /saida/lb-config-man.txt
+            find / -path /proc -prune -o -name "script.so" -print 2>/dev/null | grep plymouth > /saida/plymouth.txt; ls /usr/share/plymouth/themes >> /saida/plymouth.txt; cat /usr/share/plymouth/themes/script/script.plymouth >> /saida/plymouth.txt 2>&1
+            for s in 14 16 20 24; do grub-mkfont -s $s -o /tmp/f$s.pf2 /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf; grub-mkfont -s $s -o /tmp/b$s.pf2 /usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf; done
+            for f in /tmp/f20.pf2 /tmp/b24.pf2; do echo "$f: $(head -c 200 $f | tr -c "[:print:]" " ")"; done > /saida/grub-fontes.txt
+            cat /usr/share/live/build/functions/defaults.sh 2>/dev/null | grep -n -i -E "bootloader|secure" | head -40 > /saida/lb-defaults.txt
+            grep -rn -i "BOOTLOADERS" /usr/lib/live/build/binary_grub_cfg | head -20 >> /saida/lb-defaults.txt
+            grep -rn -E "APPEND_LIVE|KERNEL_LIVE|LINUX_LIVE" /usr/lib/live/build/binary_grub_cfg | head -30 >> /saida/lb-defaults.txt
           '
           ls -la saida
       - name: Publicar no branch sonda-saida
