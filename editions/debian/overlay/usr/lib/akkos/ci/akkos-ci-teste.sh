@@ -109,7 +109,7 @@ for i in $(seq 1 240); do [ -f "$PFX/.akkos-criado" ] && break; sleep 1; done
 check wine_prefixo bash -c "ls '$PFX' && cat '$PFX/.akkos-criado' && ls '$PFX/drive_c/windows/Fonts' | head -3"
 check wine_dxvk bash -c "ls -l '$PFX/drive_c/windows/system32/d3d11.dll' | grep -o '\-> .*'"
 NOTEPAD="$PFX/drive_c/windows/notepad.exe"
-asu win-launcher "$NOTEPAD" >/dev/null 2>&1 &
+asu win-launcher --modo app "$NOTEPAD" >/dev/null 2>&1 &
 for i in $(seq 1 90); do asu wmctrl -lx 2>/dev/null | grep -qi notepad && break; sleep 1; done
 shot 07-windows-notepad
 check janela_windows asu bash -c "wmctrl -lx | grep -i notepad"
@@ -117,7 +117,17 @@ check windows_em_sandbox bash -c "firejail --list | grep -i -E 'wine|notepad'"
 check windows_log bash -c "ls -t /home/$U/.local/share/akkos/wine/logs/ | head -3; tail -4 \$(ls -t /home/$U/.local/share/akkos/wine/logs/notepad-*.log | head -1)"
 asu bash -c "WINEPREFIX='$PFX' wineserver -k" 2>/dev/null
 sleep 2
-shot 08-final
+
+# ---------------------------------------------------------- escolha Aplicativo/Jogo
+check umu_launcher asu umu-run --version
+asu win-launcher --perguntar "$NOTEPAD" >/dev/null 2>&1 &
+for i in $(seq 1 30); do asu wmctrl -l 2>/dev/null | grep -q "Abrir programa Windows" && break; sleep 1; done
+check janela_escolha asu bash -c "wmctrl -l | grep 'Abrir programa Windows'"
+shot 08-escolha-app-jogo
+asu bash -c "wmctrl -c 'Abrir programa Windows'" 2>/dev/null   # fechar = cancelar
+sleep 2
+check escolha_cancelada bash -c "! pgrep -u $U -f akko-win-escolha && ! pgrep -u $U -f 'notepad.exe'"
+shot 09-final
 
 echo "AKKOS-TESTE-FIM"
 sleep 3

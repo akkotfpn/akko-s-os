@@ -11,7 +11,7 @@ akko-arquivos — explorador de arquivos do Akko's OS (GTK 3).
     aparecem e são montados na hora (udisks2 via GIO), com botão de ejetar
   * Pré-visualização: imagem, começo de arquivos de texto, ou detalhes
   * Duplo clique executa de verdade:
-      .exe / .msi          → win-launcher (compatibilidade Windows)
+      .exe / .msi          → win-launcher (pergunta: Aplicativo/Wine ou Jogo/Proton)
       .AppImage / ELF       → pede confirmação e executa
       .deb                  → instala com apt (pede confirmação)
       .flatpakref           → instala com Flatpak
@@ -1156,9 +1156,16 @@ class Janela(Gtk.ApplicationWindow):
             item("Abrir", lambda: [self.abrir(s) for s in sel])
             nome = os.path.basename(alvo).lower()
             if len(sel) == 1 and nome.endswith(EXT_WINDOWS):
-                item("Abrir com compatibilidade Windows", lambda: self.abrir(alvo))
-                item("Abrir sem sandbox (menos seguro)",
-                     lambda: ak.executar_destacado(["win-launcher", "--sem-sandbox", alvo], cwd=os.path.dirname(alvo)))
+                pasta = os.path.dirname(alvo)
+
+                def win(*opcoes):
+                    ak.executar_destacado(["win-launcher", *opcoes, alvo], cwd=pasta)
+
+                item("Abrir como aplicativo (Wine)", lambda: win("--modo", "app"))
+                if not nome.endswith((".msi", ".bat", ".cmd")):
+                    item("Abrir como jogo (Proton)", lambda: win("--modo", "jogo"))
+                    item("Perguntar como abrir…", lambda: win("--perguntar"))
+                item("Abrir sem sandbox (menos seguro)", lambda: win("--modo", "app", "--sem-sandbox"))
             if len(sel) == 1 and os.path.isfile(alvo):
                 item("Abrir com…", lambda: self._abrir_com(alvo))
             separador()

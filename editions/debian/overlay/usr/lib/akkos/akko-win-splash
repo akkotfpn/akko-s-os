@@ -21,6 +21,14 @@ from gi.repository import GLib, Gtk, Wnck  # noqa: E402
 sys.path.insert(0, "/usr/lib/akkos/python")
 import akkos_comum as ak  # noqa: E402
 
+# o win-launcher ajusta: modo Jogo pode passar muito tempo baixando o Proton
+try:
+    LIMITE = max(10, int(os.environ.get("AKKOS_SPLASH_LIMITE", "90")))
+except ValueError:
+    LIMITE = 90
+RODAPE = ("Akko's OS • modo Jogo (Proton)" if os.environ.get("AKKOS_SPLASH_MODO") == "jogo"
+          else "Akko's OS • compatibilidade Windows (Wine + DXVK)")
+
 CSS = """
 window.splash { background-color: @akk_bg; border: 1px solid @akk_surface_alt; border-radius: 16px; }
 .splash .programa { font-size: 15pt; font-weight: 700; }
@@ -59,7 +67,7 @@ def main():
     topo.pack_start(icone, False, False, 0)
     topo.pack_start(textos, True, True, 0)
     barra = Gtk.ProgressBar()
-    rodape = Gtk.Label(label="Akko's OS • compatibilidade Windows (Wine + DXVK)", xalign=0)
+    rodape = Gtk.Label(label=RODAPE, xalign=0)
     rodape.get_style_context().add_class("akkos-muted")
     caixa.pack_start(topo, True, True, 0)
     caixa.pack_start(barra, False, False, 0)
@@ -77,14 +85,14 @@ def main():
         if w.get_xid() in existentes or w.get_name() == janela.get_title():
             return
         classe = " ".join(filter(None, [w.get_class_group_name(), w.get_class_instance_name(), w.get_name()])).lower()
-        if ".exe" in classe or base in classe or "wine" in classe:
+        if any(t in classe for t in (".exe", base, "wine", "steam_app", "proton")):
             GLib.timeout_add(400, janela.destroy)
 
     tela.connect("window-opened", janela_nova)
 
     def pulsar():
         barra.pulse()
-        if time.monotonic() - inicio > 90:
+        if time.monotonic() - inicio > LIMITE:
             janela.destroy()
             return False
         return True

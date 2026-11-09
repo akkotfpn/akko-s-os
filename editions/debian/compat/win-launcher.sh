@@ -8,8 +8,14 @@
 #   win-launcher configurar [NOME]                 abre o winecfg do ambiente
 #   win-launcher remover NOME                      apaga um ambiente (pede confirmação)
 #   win-launcher associar ARQUIVO NOME             esse programa passa a usar o ambiente NOME
+#   win-launcher esquecer-modo ARQUIVO             volta a perguntar app/jogo para esse programa
 #
 # Opções para abrir:
+#   --modo app|jogo    app = Wine na sandbox (programas comuns);
+#                      jogo = Proton (o mesmo do Steam/SteamOS) pelo umu-launcher.
+#                      Sem --modo: usa a escolha salva para o programa ou
+#                      pergunta numa janela com menu suspenso.
+#   --perguntar        mostra a janela de escolha mesmo com escolha salva
 #   --prefixo NOME     usa o ambiente NOME (padrão: o associado ao programa, ou "padrao")
 #   --sem-sandbox      roda sem o firejail (só para programas que não funcionam na sandbox)
 #   --sem-tela         não mostra a janela de carregamento
@@ -33,7 +39,11 @@ BASE="${XDG_DATA_HOME:-$HOME/.local/share}/akkos/wine"
 PREFIXOS="$BASE/prefixos"
 LOGS="$BASE/logs"
 ASSOC="${XDG_CONFIG_HOME:-$HOME/.config}/akkos/wine-programas.conf"
+MODOS="${XDG_CONFIG_HOME:-$HOME/.config}/akkos/wine-modos.conf"   # caminho<TAB>app|jogo
+JOGOS="$BASE/jogos"          # prefixos do Proton (separados dos do Wine)
 SPLASH=/usr/lib/akkos/akko-win-splash
+ESCOLHA=/usr/lib/akkos/akko-win-escolha
+UMU_BIN="$(command -v umu-run || true)"
 
 mkdir -p "$PREFIXOS" "$LOGS" "$(dirname "$ASSOC")"
 
@@ -70,6 +80,22 @@ prefixo_de_programa() {   # nome do ambiente associado ao executável (ou "padra
     if [ -f "$ASSOC" ]; then
         awk -F'=' -v k="$chave" '$1==k {print $2; found=1} END {if(!found) print ""}' "$ASSOC" | tail -1
     fi
+}
+
+modo_salvo() {   # modo_salvo CAMINHO_ABSOLUTO → app|jogo|""
+    [ -f "$MODOS" ] || return 0
+    awk -F'\t' -v k="$1" '$1==k {m=$2} END {print m}' "$MODOS"
+}
+
+salvar_modo() {  # salvar_modo CAMINHO app|jogo
+    touch "$MODOS"
+    awk -F'\t' -v k="$1" '$1!=k' "$MODOS" > "$MODOS.tmp" && mv "$MODOS.tmp" "$MODOS"
+    printf '%s\t%s\n' "$1" "$2" >> "$MODOS"
+}
+
+esquecer_modo() {
+    [ -f "$MODOS" ] || return 0
+    awk -F'\t' -v k="$1" '$1!=k' "$MODOS" > "$MODOS.tmp" && mv "$MODOS.tmp" "$MODOS"
 }
 
 # ---------------------------------------------------------------- prefixos
@@ -166,9 +192,11 @@ explicar_falha() {   # lê o log e traduz os erros mais comuns
 # ---------------------------------------------------------------- abrir
 
 abrir() {
-    local prefixo="" sandbox=1 tela=1
+    local prefixo="" sandbox=1 tela=1 modo="" perguntar=0
     while [ $# -gt 0 ]; do
         case "$1" in
+            --modo) modo="$2"; shift 2 ;;
+            --perguntar) perguntar=1; shift ;;
             --prefixo) prefixo="$2"; shift 2 ;;
             --sem-sandbox) sandbox=0; shift ;;
             --sem-tela) tela=0; shift ;;
@@ -196,12 +224,38 @@ abrir() {
     nome="$(basename "$arquivo")"
     extensao="$(echo "${nome##*.}" | tr '[:upper:]' '[:lower:]')"
 
+    # ---- aplicativo (Wine) ou jogo (Proton)?
+    case "$modo" in app|jogo|"") ;; *)
+        dialogo erro "Modo inválido" "Use --modo app ou --modo jogo."; return 2 ;;
+    esac
+    case "$extensao" in msi|bat|cmd) modo=app ;; esac   # instaladores/scripts: sempre Wine
+    [ -z "$modo" ] && [ $perguntar = 0 ] && modo="$(modo_salvo "$arquivo")"
+    if [ -z "$modo" ]; then
+        if tem_tela && [ -x "$ESCOLHA" ]; then
+            local sugestao=app resp
+            echo "$nome" | grep -qiE "setup|install|unins" || {
+                # executável dentro de uma pasta de jogo conhecida: sugere Jogo
+                echo "$arquivo" | grep -qiE "/(games?|jogos)/|steamapps|epic games|gog" && sugestao=jogo
+            }
+            [ -n "$(modo_salvo "$arquivo")" ] && sugestao="$(modo_salvo "$arquivo")"
+            resp="$("$ESCOLHA" "$nome" "$sugestao")" || return 0   # cancelou
+            modo="$(echo "$resp" | head -1)"
+            echo "$resp" | grep -qx lembrar && salvar_modo "$arquivo" "$modo"
+        else
+            modo=app
+        fi
+    fi
+    if [ "$modo" = jogo ]; then
+        abrir_jogo "$arquivo" "$prefixo" "$tela" "$@"
+        return $?
+    fi
+
     [ -z "$prefixo" ] && prefixo="$(prefixo_de_programa "$arquivo")"
     [ -z "$prefixo" ] && prefixo=padrao
     nome_valido "$prefixo" || { dialogo erro "Ambiente inválido" "Nome de ambiente inválido: $prefixo"; return 2; }
     local pfx="$PREFIXOS/$prefixo"
     local log
-    log="$LOGS/$(echo "${nome%.*}" | tr -c 'A-Za-z0-9._-' '_')-$(date +%Y%m%d-%H%M%S).log"
+    log="$LOGS/$(printf "%s" "${nome%.*}" | tr -c 'A-Za-z0-9._-' '_')-$(date +%Y%m%d-%H%M%S).log"
 
     local splash_pid=""
     if [ $tela = 1 ] && tem_tela && [ -x "$SPLASH" ]; then
@@ -271,6 +325,69 @@ abrir() {
     return $codigo
 }
 
+# ---------------------------------------------------------------- jogos (Proton)
+
+# Modo Jogo: o umu-launcher roda o Proton (Wine da Valve + DXVK + VKD3D-Proton)
+# dentro do Steam Linux Runtime, igual ao Steam/SteamOS, mas sem precisar do
+# Steam. Na primeira vez ele baixa o runtime e o GE-Proton (~1 GB, precisa de
+# internet). Jogos rodam FORA do firejail: o runtime usa seus próprios
+# namespaces (bubblewrap) e anti-cheats/overlays quebram dentro da sandbox.
+abrir_jogo() {   # abrir_jogo ARQUIVO PREFIXO TELA [args…]
+    local arquivo=$1 prefixo=${2:-padrao} tela=$3
+    shift 3
+    local dir nome
+    dir="$(dirname "$arquivo")"; nome="$(basename "$arquivo")"
+    if [ -z "$UMU_BIN" ]; then
+        dialogo erro "Modo Jogo indisponível" "O umu-launcher (Proton) não está instalado. Abra como Aplicativo."
+        return 3
+    fi
+    nome_valido "$prefixo" || { dialogo erro "Ambiente inválido" "Nome de ambiente inválido: $prefixo"; return 2; }
+    local pfx="$JOGOS/$prefixo" log
+    mkdir -p "$pfx"
+    log="$LOGS/jogo-$(printf "%s" "${nome%.*}" | tr -c 'A-Za-z0-9._-' '_')-$(date +%Y%m%d-%H%M%S).log"
+
+    local primeira=0
+    ls -d "$HOME"/.local/share/Steam/compatibilitytools.d/GE-Proton* "$HOME"/.local/share/Steam/compatibilitytools.d/UMU-Proton* \
+        >/dev/null 2>&1 || primeira=1
+    if [ $primeira = 1 ] && ! getent hosts github.com >/dev/null 2>&1; then
+        dialogo erro "Sem internet" "Na primeira vez o modo Jogo precisa baixar o Proton (~1 GB).\nConecte-se à internet ou abra como Aplicativo."
+        return 6
+    fi
+    local splash_pid=""
+    if [ "$tela" = 1 ] && tem_tela && [ -x "$SPLASH" ]; then
+        local msg="Iniciando com Proton…"
+        [ $primeira = 1 ] && msg="Baixando o Proton e o runtime de jogos (só na primeira vez, ~1 GB)…"
+        [ -f "$pfx/system.reg" ] || [ $primeira = 1 ] || msg="Criando o ambiente do jogo (só na primeira vez)…"
+        AKKOS_SPLASH_MODO=jogo AKKOS_SPLASH_LIMITE=$([ $primeira = 1 ] && echo 1800 || echo 120) "$SPLASH" "$nome" "$msg" &
+        splash_pid=$!
+    fi
+    {
+        echo "== Akko's OS win-launcher (modo Jogo) $(date -Iseconds)"
+        echo "programa: $arquivo"
+        echo "ambiente: $pfx"
+        echo "proton:   ${PROTONPATH:-GE-Proton} via $UMU_BIN"
+        echo "=="
+    } > "$log"
+    local inicio fim codigo
+    inicio=$(date +%s)
+    ( cd "$dir" && WINEPREFIX="$pfx" GAMEID="${GAMEID:-umu-default}" PROTONPATH="${PROTONPATH:-GE-Proton}" \
+        "$UMU_BIN" "$arquivo" "$@" ) >>"$log" 2>&1
+    codigo=$?
+    fim=$(date +%s)
+    [ -n "$splash_pid" ] && kill "$splash_pid" 2>/dev/null
+    echo "== saiu com código $codigo após $((fim - inicio)) s" >> "$log"
+    if [ $codigo != 0 ] && [ $((fim - inicio)) -lt 30 ]; then
+        local dica
+        dica="$(explicar_falha "$log")"
+        grep -qiE "urlopen|timed out|Name or service not known|ConnectionError|HTTPError" "$log" && \
+            dica="• Falha ao baixar o Proton/runtime: verifique a internet e tente de novo.\n$dica"
+        grep -qiE "bwrap|unprivileged user namespaces|setting up uid map" "$log" && \
+            dica="• O runtime de jogos não conseguiu criar o contêiner (user namespaces).\n$dica"
+        dialogo erro "“$nome” não abriu como jogo" "Saiu com erro (código $codigo).\n\n$(printf '%b' "$dica")\nDica: tente abrir como Aplicativo (clique direito no Arquivos).\nLog: $log"
+    fi
+    return $codigo
+}
+
 # ---------------------------------------------------------------- comandos
 
 case "${1:-}" in
@@ -316,8 +433,12 @@ case "${1:-}" in
         echo "${chave}=$3" >> "$ASSOC"
         echo "$chave → ambiente $3"
         ;;
+    esquecer-modo)
+        [ -n "${2:-}" ] || { echo "uso: win-launcher esquecer-modo ARQUIVO" >&2; exit 2; }
+        esquecer_modo "$(realpath "$2")"
+        ;;
     -h|--help|"")
-        sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
+        sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'
         [ -n "${1:-}" ] || exit 2
         ;;
     *)

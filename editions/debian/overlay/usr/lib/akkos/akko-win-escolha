@@ -1,0 +1,105 @@
+#!/usr/bin/python3
+"""
+akko-win-escolha PROGRAMA — pergunta como abrir um programa Windows.
+
+Menu suspenso:
+  Aplicativo (Wine)  → programas comuns: instaladores, utilitários, escritório
+  Jogo (Proton)      → jogos: o mesmo Proton do Steam/SteamOS (DXVK, VKD3D-Proton)
+
+Imprime na saída padrão "app" ou "jogo" e, se "Lembrar" estiver marcado,
+uma segunda linha "lembrar". Sai com código 1 se a pessoa cancelar.
+"""
+
+import sys
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk  # noqa: E402
+
+sys.path.insert(0, "/usr/lib/akkos/python")
+import akkos_comum as ak  # noqa: E402
+
+MODOS = [
+    ("app", "Aplicativo (Wine)",
+     "Para programas comuns: instaladores, utilitários, programas de escritório. "
+     "Roda na sandbox do Akko's OS."),
+    ("jogo", "Jogo (Proton)",
+     "Para jogos: usa o Proton, o mesmo do Steam/SteamOS, com DirectX 9–12 via Vulkan. "
+     "Na primeira vez baixa o Proton (~1 GB). Jogos não rodam na sandbox."),
+]
+
+CSS = """
+.escolha .titulo { font-size: 14pt; font-weight: 700; }
+.escolha combobox button { padding: 8px 12px; }
+"""
+
+
+def main():
+    programa = sys.argv[1] if len(sys.argv) > 1 else "Programa Windows"
+    sugestao = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] in ("app", "jogo") else "app"
+    ak.aplicar_css(CSS)
+    Gtk.Settings.get_default().set_property("gtk-application-prefer-dark-theme", True)
+
+    d = Gtk.Dialog(title="Abrir programa Windows")
+    d.get_style_context().add_class("escolha")
+    d.set_default_size(460, -1)
+    d.set_position(Gtk.WindowPosition.CENTER)
+    d.set_keep_above(True)
+    d.add_button("Cancelar", Gtk.ResponseType.CANCEL)
+    ok = d.add_button("Abrir", Gtk.ResponseType.OK)
+    ok.get_style_context().add_class("akkos-primario")
+    d.set_default_response(Gtk.ResponseType.OK)
+
+    caixa = d.get_content_area()
+    caixa.set_spacing(12)
+    for lado in ("start", "end", "top", "bottom"):
+        getattr(caixa, f"set_margin_{lado}")(18)
+
+    topo = Gtk.Box(spacing=12)
+    icone = Gtk.Image.new_from_icon_name("wine", Gtk.IconSize.DIALOG)
+    textos = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+    titulo = Gtk.Label(label=programa, xalign=0, ellipsize=3)
+    titulo.get_style_context().add_class("titulo")
+    sub = Gtk.Label(label="Como você quer abrir este programa?", xalign=0)
+    sub.get_style_context().add_class("akkos-muted")
+    textos.pack_start(titulo, False, False, 0)
+    textos.pack_start(sub, False, False, 0)
+    topo.pack_start(icone, False, False, 0)
+    topo.pack_start(textos, True, True, 0)
+    caixa.pack_start(topo, False, False, 0)
+
+    combo = Gtk.ComboBoxText()
+    for chave, rotulo, _ in MODOS:
+        combo.append(chave, rotulo)
+    combo.set_active_id(sugestao)
+    caixa.pack_start(combo, False, False, 0)
+
+    descricao = Gtk.Label(xalign=0, wrap=True, max_width_chars=52)
+    descricao.get_style_context().add_class("akkos-muted")
+    caixa.pack_start(descricao, False, False, 0)
+
+    def atualizar(*_):
+        descricao.set_text(next(d for k, _, d in MODOS if k == combo.get_active_id()))
+
+    combo.connect("changed", atualizar)
+    atualizar()
+
+    lembrar = Gtk.CheckButton(label="Lembrar a escolha para este programa")
+    lembrar.set_active(True)
+    caixa.pack_start(lembrar, False, False, 0)
+
+    d.show_all()
+    resposta = d.run()
+    escolha = combo.get_active_id()
+    d.destroy()
+    if resposta != Gtk.ResponseType.OK:
+        sys.exit(1)
+    ak.tocar("click")
+    print(escolha)
+    if lembrar.get_active():
+        print("lembrar")
+
+
+if __name__ == "__main__":
+    main()

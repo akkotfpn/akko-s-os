@@ -44,7 +44,7 @@ erro() { printf '\033[1;31mERRO: %s\033[0m\n' "$*" >&2; exit 1; }
 # ------------------------------------------------------------------ 1
 passo "1/7 Dependências do build"
 DEPS=(live-build debootstrap xorriso squashfs-tools mtools dosfstools grub-common grub-pc-bin
-      grub-efi-amd64-bin python3 python3-numpy python3-pil fonts-dejavu-core rsync ca-certificates)
+      grub-efi-amd64-bin python3 python3-numpy python3-pil fonts-dejavu-core rsync ca-certificates curl)
 FALTAM=()
 for p in "${DEPS[@]}"; do dpkg -s "$p" >/dev/null 2>&1 || FALTAM+=("$p"); done
 if [ ${#FALTAM[@]} -gt 0 ]; then
@@ -113,6 +113,20 @@ rsync -a "$AQUI/overlay/" "$INC/"
 
 install -Dm755 "$AQUI/compat/win-launcher.sh" "$INC/usr/bin/win-launcher"
 install -Dm755 "$AQUI/security/security_hardening.sh" "$INC/usr/lib/akkos/security_hardening.sh"
+
+# umu-launcher: roda o Proton (modo Jogo do win-launcher) sem o Steam.
+# Versão e hash fixos; o próprio umu baixa o runtime e o GE-Proton no 1º uso.
+UMU_VERSAO=1.4.4
+UMU_SHA256=eb590691841f7fad3fc3ad8fd5db4ccb87849fe7948e62b28ece7a4ee48cc851
+echo "-- umu-launcher $UMU_VERSAO (Proton fora do Steam)"
+UMU_TAR="$TRAB/umu-$UMU_VERSAO.tar"
+[ -f "$UMU_TAR" ] || curl -fsSL --retry 4 -o "$UMU_TAR" \
+    "https://github.com/Open-Wine-Components/umu-launcher/releases/download/$UMU_VERSAO/umu-launcher-$UMU_VERSAO-zipapp.tar"
+echo "$UMU_SHA256  $UMU_TAR" | sha256sum -c --quiet - || erro "hash do umu-launcher não confere"
+mkdir -p "$INC/usr/lib/akkos/umu" "$INC/usr/bin"
+tar -xf "$UMU_TAR" -C "$INC/usr/lib/akkos/umu" --strip-components=1 umu/umu-run
+chmod 755 "$INC/usr/lib/akkos/umu/umu-run"
+ln -sf /usr/lib/akkos/umu/umu-run "$INC/usr/bin/umu-run"
 echo "$VERSAO" > "$INC/usr/share/akkos/versao"
 
 echo "-- sintetizando a identidade sonora"

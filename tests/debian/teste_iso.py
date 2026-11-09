@@ -290,7 +290,7 @@ def main():
     obrigatorias = ["os_release_nome", "sessao", "sons_gerados", "pipewire", "som_notify", "rede_nm",
                     "internet_tls", "firewall_ativo", "firewall_local_responde", "firewall_bloqueia_de_fora",
                     "sysctl", "apparmor", "binfmt_exe", "janela_arquivos", "janela_rede", "janela_navegador",
-                    "wine_prefixo", "janela_windows", "audio_gravado"]
+                    "wine_prefixo", "janela_windows", "umu_launcher", "janela_escolha", "audio_gravado"]
     faltando = [c for c in obrigatorias if c not in resultado["verificacoes"]]
     resultado["faltando"] = faltando
     resultado["sucesso"] = (not faltando and all(v["ok"] for v in resultado["etapas"].values())

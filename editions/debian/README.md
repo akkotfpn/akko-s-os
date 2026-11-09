@@ -38,6 +38,8 @@ editions/debian/
     │   ├── akko-rede           conexões Wi-Fi/cabo (libnm)
     │   ├── akko-soundd         serviço de sons do sistema
     │   ├── akko-win-splash     tela de carregamento de programas Windows
+    │   ├── akko-win-escolha    janela "Aplicativo (Wine) / Jogo (Proton)"
+    │   ├── umu/umu-run         umu-launcher (baixado e conferido por hash no build)
     │   ├── akkos-autostart     o que sobe com a sessão
     │   ├── gerar-openbox-rc.py configuração do Openbox (atalhos, tema)
     │   ├── python/akkos_comum.py  paleta, CSS e sons compartilhados
@@ -117,8 +119,19 @@ editions/debian/
   houver internet, DXVK ativado, janela de carregamento, logs e explicação
   de falhas comuns. Registrado no **binfmt_misc**: `./programa.exe` no
   terminal também abre pelo lançador.
+- **Aplicativo ou Jogo**: ao abrir um `.exe` pela primeira vez aparece uma
+  janela com menu suspenso:
+  - **Aplicativo (Wine)** — programas comuns e instaladores, na sandbox.
+  - **Jogo (Proton)** — o mesmo Proton do Steam/SteamOS (Wine da Valve +
+    DXVK + VKD3D-Proton para DirectX 12), via **umu-launcher 1.4.4**, sem
+    precisar do Steam. Na primeira vez baixa o Steam Linux Runtime e o
+    GE-Proton (~1 GB, precisa de internet). Jogos rodam fora do firejail.
+  A escolha fica salva por programa (`~/.config/akkos/wine-modos.conf`);
+  `.msi`/`.bat` são sempre Aplicativo. No Arquivos, o clique direito tem
+  "Abrir como aplicativo", "Abrir como jogo" e "Perguntar como abrir…".
+  No terminal: `win-launcher --modo app|jogo PROGRAMA.exe`.
 - Comandos: `win-launcher prefixos | criar NOME | configurar NOME |
-  remover NOME | associar ARQUIVO NOME`.
+  remover NOME | associar ARQUIVO NOME | esquecer-modo ARQUIVO`.
 
 ### F. Segurança
 `security_hardening.sh` (roda no build; pode ser repetido no sistema):
@@ -138,6 +151,9 @@ editions/debian/
 **Limites honestos:** o firewall e as sandboxes reduzem riscos, mas não
 substituem cuidado. O Wine **não é** isolamento completo contra malware.
 Programas Windows com driver de kernel ou anti-cheat não funcionam.
+O modo Jogo é verificado no CI só até a janela de escolha e a presença do
+umu: rodar um jogo de verdade precisa de GPU real com Vulkan (numa VM, use
+passthrough da placa de vídeo).
 
 ## Compilar
 
