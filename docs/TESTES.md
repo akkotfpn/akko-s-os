@@ -71,3 +71,31 @@ geração da ISO (sistema de arquivos raiz; AppArmor no Ubuntu 26.04 → runner
 
 GPU AMD, GPU NVIDIA, Vulkan em hardware, HDR, controles USB/Bluetooth,
 modo gaming com GPU real, Secure Boot com NVIDIA.
+
+## Edição Debian
+
+Workflow `.github/workflows/debian-iso.yml`, execução **42560255111**
+(commit do branch `edicao-debian`, 09/11/2026): **aprovada, 49 de 49
+verificações**. Prints e logs no branch `evidencias-debian`.
+
+| Área | Verificado no QEMU/KVM |
+|---|---|
+| Boot | GRUB próprio e área de trabalho em UEFI, UEFI com Secure Boot e BIOS; tema Plymouth `akkos` |
+| Sistema | os-release "Akko's OS", pt-BR, sessão `akkos` (Openbox, painel, sons, dunst) |
+| Áudio | PipeWire com saída ativa; `notify`/`click` tocados; 7–8 s de som gravados da VM |
+| Rede | NetworkManager conectado, HTTPS com certificado válido, DNS |
+| Segurança | nftables (entrada bloqueada, conexão de fora sem resposta, log), sysctl, root travado, AppArmor com 134 perfis carregados também no live |
+| Programas | Arquivos (grade/lista), Rede, menu, Chromium com página inicial em firejail |
+| Windows | Wine 10 (64 e 32 bits), DXVK no prefixo, binfmt, Bloco de Notas aberto em firejail **com AppArmor** (`firejail-default (enforce)`), fecha sem erro |
+| Aplicativo/Jogo | janela de escolha aparece e cancela corretamente; umu-launcher 1.4.4 instalado |
+
+Teste rápido (job `apps`, ~4 min): painel, Arquivos com navegação e troca de
+modos, Rede, janela de escolha e tela de carregamento num Debian 13 com Xvfb.
+
+**Não verificado:** jogo de verdade pelo Proton (precisa de GPU real com
+Vulkan e internet para baixar ~1 GB), Wi-Fi físico, instalação em disco
+(a edição ainda não tem instalador).
+
+**Limite conhecido:** o perfil AppArmor do firejail bloqueia `userns_create`,
+que a sandbox do próprio Chromium usa; por isso o navegador roda no firejail
+sem AppArmor (diagnóstico `diag_chromium_apparmor` no teste).
