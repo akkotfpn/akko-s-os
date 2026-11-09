@@ -1,0 +1,547 @@
+#!/usr/bin/python3
+"""
+akko-rede — conexões de rede do Akko's OS (NetworkManager via libnm).
+
+  * Estado real: conectado/desconectado, conexão, interface, IP, gateway,
+    DNS e se há acesso à internet (verificação de conectividade do NM)
+  * Wi-Fi: liga/desliga, busca redes, lista por sinal (com cadeado nas
+    protegidas), conecta pedindo a senha (WPA/WPA2/WPA3), reconecta em
+    redes salvas, esquece rede
+  * Cabo: mostra o estado de cada placa e permite desconectar/reconectar
+  * Avançado: abre o editor do NetworkManager (IP manual, VPN, proxy, 802.1X)
+
+O painel abre este programa ao clicar no ícone de rede.
+"""
+
+import sys
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("NM", "1.0")
+from gi.repository import Gio, GLib, Gtk, NM, Pango  # noqa: E402
+
+sys.path.insert(0, "/usr/lib/akkos/python")
+import akkos_comum as ak  # noqa: E402
+
+APP_ID = "org.akkos.Rede"
+
+CSS = """
+.cartao { background-color: @akk_surface; border-radius: 12px; padding: 14px; }
+.rede-linha { padding: 8px 10px; border-radius: 8px; }
+list { background: transparent; }
+row:hover .rede-linha { background-color: @akk_surface_alt; }
+.conectada { color: @akk_cyan; font-weight: 700; }
+.estado-grande { font-size: 16pt; font-weight: 700; }
+"""
+
+ESTADOS_DEV = {
+    NM.DeviceState.UNMANAGED: "não gerenciada",
+    NM.DeviceState.UNAVAILABLE: "indisponível (cabo desconectado?)",
+    NM.DeviceState.DISCONNECTED: "desconectada",
+    NM.DeviceState.PREPARE: "preparando…",
+    NM.DeviceState.CONFIG: "configurando…",
+    NM.DeviceState.NEED_AUTH: "aguardando senha…",
+    NM.DeviceState.IP_CONFIG: "obtendo endereço IP…",
+    NM.DeviceState.IP_CHECK: "verificando…",
+    NM.DeviceState.SECONDARIES: "conectando…",
+    NM.DeviceState.ACTIVATED: "conectada",
+    NM.DeviceState.DEACTIVATING: "desconectando…",
+    NM.DeviceState.FAILED: "falhou",
+}
+
+
+def ssid_texto(ap):
+    ssid = ap.get_ssid()
+    if ssid is None:
+        return None
+    return NM.utils_ssid_to_utf8(ssid.get_data())
+
+
+# Enums do libnm que começam com dígito ganham "_" no PyGObject
+SEC = getattr(NM, "_80211ApSecurityFlags", None) or getattr(NM, "80211ApSecurityFlags")
+APF = getattr(NM, "_80211ApFlags", None) or getattr(NM, "80211ApFlags")
+
+
+def seguranca(ap):
+    """'aberta' | 'wpa-psk' | 'sae' | 'enterprise' | 'wep'"""
+    flags, wpa, rsn = int(ap.get_flags()), int(ap.get_wpa_flags()), int(ap.get_rsn_flags())
+    if (wpa | rsn) & int(SEC.KEY_MGMT_802_1X):
+        return "enterprise"
+    if rsn & int(SEC.KEY_MGMT_SAE) and not rsn & int(SEC.KEY_MGMT_PSK):
+        return "sae"
+    if (wpa | rsn) & int(SEC.KEY_MGMT_PSK):
+        return "wpa-psk"
+    if flags & int(APF.PRIVACY):
+        return "wep"
+    return "aberta"
+
+
+def icone_sinal(forca):
+    nivel = "excellent" if forca > 75 else "good" if forca > 50 else "ok" if forca > 25 else "weak"
+    return f"network-wireless-signal-{nivel}-symbolic"
+
+
+class Janela(Gtk.ApplicationWindow):
+    def __init__(self, app):
+        super().__init__(application=app, title="Rede")
+        self.get_style_context().add_class("akkos")
+        self.set_default_size(460, 640)
+        self.set_icon_name("network-wireless")
+        try:
+            self.nm = NM.Client.new(None)
+        except GLib.Error as erro:
+            self.add(Gtk.Label(label=f"NetworkManager não está rodando:\n{erro.message}", margin=30))
+            return
+
+        cab = Gtk.HeaderBar(show_close_button=True, title="Rede")
+        self.set_titlebar(cab)
+        avancado = Gtk.Button(tooltip_text="Configurações avançadas (IP manual, VPN, proxy)")
+        avancado.add(Gtk.Image.new_from_icon_name("preferences-system-symbolic", Gtk.IconSize.BUTTON))
+        avancado.connect("clicked", lambda *_: self._abrir_editor())
+        cab.pack_end(avancado)
+
+        corpo = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin=14)
+        self.add(corpo)
+
+        # --- estado atual
+        estado = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        estado.get_style_context().add_class("cartao")
+        linha = Gtk.Box(spacing=12)
+        self.icone_estado = Gtk.Image.new_from_icon_name("network-offline-symbolic", Gtk.IconSize.DIALOG)
+        self.icone_estado.set_pixel_size(40)
+        textos = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.rotulo_estado = Gtk.Label(xalign=0)
+        self.rotulo_estado.get_style_context().add_class("estado-grande")
+        self.rotulo_internet = Gtk.Label(xalign=0)
+        self.rotulo_internet.get_style_context().add_class("akkos-muted")
+        textos.pack_start(self.rotulo_estado, False, False, 0)
+        textos.pack_start(self.rotulo_internet, False, False, 0)
+        linha.pack_start(self.icone_estado, False, False, 0)
+        linha.pack_start(textos, True, True, 0)
+        self.b_desconectar = Gtk.Button(label="Desconectar")
+        self.b_desconectar.connect("clicked", lambda *_: self._desconectar())
+        linha.pack_end(self.b_desconectar, False, False, 0)
+        estado.pack_start(linha, False, False, 0)
+        self.detalhes = Gtk.Grid(column_spacing=12, row_spacing=3, margin_top=6)
+        estado.pack_start(self.detalhes, False, False, 0)
+        corpo.pack_start(estado, False, False, 0)
+
+        # --- cabo
+        self.caixa_cabo = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        corpo.pack_start(self.caixa_cabo, False, False, 0)
+
+        # --- wi-fi
+        topo_wifi = Gtk.Box(spacing=10)
+        titulo = Gtk.Label(label="Wi-Fi", xalign=0)
+        titulo.get_style_context().add_class("akkos-titulo")
+        self.chave_wifi = Gtk.Switch(valign=Gtk.Align.CENTER)
+        self.chave_wifi.connect("notify::active", self._alternar_wifi)
+        self.b_buscar = Gtk.Button(tooltip_text="Buscar redes")
+        self.b_buscar.add(Gtk.Image.new_from_icon_name("view-refresh-symbolic", Gtk.IconSize.BUTTON))
+        self.b_buscar.connect("clicked", lambda *_: self._buscar())
+        self.girando = Gtk.Spinner()
+        topo_wifi.pack_start(titulo, True, True, 0)
+        topo_wifi.pack_end(self.chave_wifi, False, False, 0)
+        topo_wifi.pack_end(self.b_buscar, False, False, 0)
+        topo_wifi.pack_end(self.girando, False, False, 0)
+        corpo.pack_start(topo_wifi, False, False, 0)
+
+        self.aviso_wifi = Gtk.Label(xalign=0, wrap=True)
+        self.aviso_wifi.get_style_context().add_class("akkos-muted")
+        corpo.pack_start(self.aviso_wifi, False, False, 0)
+
+        rolagem = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER)
+        rolagem.get_style_context().add_class("cartao")
+        self.lista = Gtk.ListBox(activate_on_single_click=True)
+        self.lista.connect("row-activated", self._rede_clicada)
+        rolagem.add(self.lista)
+        corpo.pack_start(rolagem, True, True, 0)
+
+        self.mensagem = Gtk.Label(xalign=0, wrap=True)
+        corpo.pack_end(self.mensagem, False, False, 0)
+
+        for sinal in ("notify::primary-connection", "notify::state", "notify::connectivity",
+                      "notify::wireless-enabled", "device-added", "device-removed",
+                      "active-connection-added", "active-connection-removed"):
+            self.nm.connect(sinal, lambda *_: self.atualizar())
+        self._ligar_dispositivos()
+        self.atualizar()
+        self._buscar(silencioso=True)
+        GLib.timeout_add_seconds(4, lambda: self.atualizar() or True)
+
+    # ------------------------------------------------------------ dispositivos
+
+    def wifis(self):
+        return [d for d in self.nm.get_devices() if isinstance(d, NM.DeviceWifi)]
+
+    def cabos(self):
+        return [d for d in self.nm.get_devices() if isinstance(d, NM.DeviceEthernet)]
+
+    def _ligar_dispositivos(self):
+        for d in self.nm.get_devices():
+            d.connect("state-changed", lambda *_: self.atualizar())
+            if isinstance(d, NM.DeviceWifi):
+                d.connect("access-point-added", lambda *_: self._agendar_lista())
+                d.connect("access-point-removed", lambda *_: self._agendar_lista())
+
+    def _agendar_lista(self):
+        if not hasattr(self, "_lista_pendente"):
+            self._lista_pendente = GLib.timeout_add(400, self._preencher_lista)
+
+    # ------------------------------------------------------------ atualização
+
+    def atualizar(self):
+        ativa = self.nm.get_primary_connection()
+        conectado = ativa is not None and self.nm.get_state() >= NM.State.CONNECTED_LOCAL
+        for filho in self.detalhes.get_children():
+            self.detalhes.remove(filho)
+        if conectado:
+            self.rotulo_estado.set_text(f"Conectado: {ativa.get_id()}")
+            conect = self.nm.get_connectivity()
+            textos = {NM.ConnectivityState.FULL: "Com acesso à internet",
+                      NM.ConnectivityState.LIMITED: "Conectado, mas sem internet",
+                      NM.ConnectivityState.PORTAL: "Precisa entrar pelo navegador (portal de acesso)",
+                      NM.ConnectivityState.NONE: "Sem acesso à internet"}
+            self.rotulo_internet.set_text(textos.get(conect, "Verificando internet…"))
+            eh_wifi = ativa.get_connection_type() == "802-11-wireless"
+            self.icone_estado.set_from_icon_name("network-wireless-symbolic" if eh_wifi else "network-wired-symbolic",
+                                                 Gtk.IconSize.DIALOG)
+            linhas = []
+            devs = ativa.get_devices()
+            if devs:
+                linhas.append(("Interface", devs[0].get_iface()))
+            ip4 = ativa.get_ip4_config()
+            if ip4:
+                ends = [f"{a.get_address()}/{a.get_prefix()}" for a in ip4.get_addresses()]
+                if ends:
+                    linhas.append(("IPv4", ", ".join(ends)))
+                if ip4.get_gateway():
+                    linhas.append(("Gateway", ip4.get_gateway()))
+                if ip4.get_nameservers():
+                    linhas.append(("DNS", ", ".join(ip4.get_nameservers())))
+            ip6 = ativa.get_ip6_config()
+            if ip6:
+                globais = [a.get_address() for a in ip6.get_addresses() if not a.get_address().startswith("fe80")]
+                if globais:
+                    linhas.append(("IPv6", globais[0]))
+            if devs and devs[0].get_hw_address():
+                linhas.append(("MAC", devs[0].get_hw_address()))
+            if eh_wifi and devs and isinstance(devs[0], NM.DeviceWifi) and devs[0].get_active_access_point():
+                ap = devs[0].get_active_access_point()
+                linhas.append(("Sinal", f"{ap.get_strength()}% — {ap.get_frequency() / 1000:.1f} GHz"))
+            for i, (k, v) in enumerate(linhas):
+                rk = Gtk.Label(label=k, xalign=1)
+                rk.get_style_context().add_class("akkos-muted")
+                self.detalhes.attach(rk, 0, i, 1, 1)
+                self.detalhes.attach(Gtk.Label(label=v, xalign=0, selectable=True), 1, i, 1, 1)
+            self.b_desconectar.show()
+        else:
+            self.rotulo_estado.set_text("Desconectado")
+            self.rotulo_internet.set_text("Conecte um cabo ou escolha uma rede Wi-Fi abaixo")
+            self.icone_estado.set_from_icon_name("network-offline-symbolic", Gtk.IconSize.DIALOG)
+            self.b_desconectar.hide()
+        self.detalhes.show_all()
+
+        # cabos
+        for filho in self.caixa_cabo.get_children():
+            self.caixa_cabo.remove(filho)
+        for dev in self.cabos():
+            linha = Gtk.Box(spacing=10)
+            linha.get_style_context().add_class("cartao")
+            linha.pack_start(Gtk.Image.new_from_icon_name("network-wired-symbolic", Gtk.IconSize.LARGE_TOOLBAR),
+                             False, False, 0)
+            estado_txt = ESTADOS_DEV.get(dev.get_state(), "desconhecido")
+            linha.pack_start(Gtk.Label(label=f"Cabo ({dev.get_iface()}): {estado_txt}", xalign=0,
+                                       ellipsize=Pango.EllipsizeMode.END), True, True, 0)
+            if dev.get_state() == NM.DeviceState.ACTIVATED:
+                b = Gtk.Button(label="Desconectar")
+                b.connect("clicked", lambda _b, d=dev: self._desconectar_dev(d))
+                linha.pack_end(b, False, False, 0)
+            elif dev.get_state() == NM.DeviceState.DISCONNECTED:
+                b = Gtk.Button(label="Conectar")
+                b.connect("clicked", lambda _b, d=dev: self._conectar_cabo(d))
+                linha.pack_end(b, False, False, 0)
+            self.caixa_cabo.pack_start(linha, False, False, 0)
+        self.caixa_cabo.show_all()
+
+        # wi-fi
+        tem_wifi = bool(self.wifis())
+        ligado = self.nm.wireless_get_enabled()
+        self.chave_wifi.handler_block_by_func(self._alternar_wifi)
+        self.chave_wifi.set_active(ligado and tem_wifi)
+        self.chave_wifi.handler_unblock_by_func(self._alternar_wifi)
+        self.chave_wifi.set_sensitive(tem_wifi and self.nm.wireless_hardware_get_enabled())
+        self.b_buscar.set_sensitive(tem_wifi and ligado)
+        if not tem_wifi:
+            self.aviso_wifi.set_text("Nenhuma placa Wi-Fi encontrada (ou falta o firmware dela).")
+        elif not self.nm.wireless_hardware_get_enabled():
+            self.aviso_wifi.set_text("O Wi-Fi está desligado por uma chave física ou pelo modo avião.")
+        elif not ligado:
+            self.aviso_wifi.set_text("Wi-Fi desligado.")
+        else:
+            self.aviso_wifi.set_text("")
+        self._agendar_lista()
+        return False
+
+    def _preencher_lista(self):
+        if hasattr(self, "_lista_pendente"):
+            del self._lista_pendente
+        for filho in self.lista.get_children():
+            self.lista.remove(filho)
+        if not self.nm.wireless_get_enabled():
+            return False
+        ativo_ssid = None
+        melhores = {}
+        for dev in self.wifis():
+            ap_ativo = dev.get_active_access_point()
+            if ap_ativo:
+                ativo_ssid = ssid_texto(ap_ativo)
+            for ap in dev.get_access_points():
+                nome = ssid_texto(ap)
+                if not nome:
+                    continue   # rede oculta
+                if nome not in melhores or ap.get_strength() > melhores[nome][1].get_strength():
+                    melhores[nome] = (dev, ap)
+        salvas = {c.get_id() for c in self.nm.get_connections() if c.get_connection_type() == "802-11-wireless"}
+        for nome, (dev, ap) in sorted(melhores.items(), key=lambda kv: (kv[0] != ativo_ssid, -kv[1][1].get_strength())):
+            linha = Gtk.ListBoxRow()
+            linha.dados = (nome, dev, ap)
+            caixa = Gtk.Box(spacing=10)
+            caixa.get_style_context().add_class("rede-linha")
+            caixa.pack_start(Gtk.Image.new_from_icon_name(icone_sinal(ap.get_strength()), Gtk.IconSize.LARGE_TOOLBAR),
+                             False, False, 0)
+            r = Gtk.Label(label=nome, xalign=0, ellipsize=Pango.EllipsizeMode.END)
+            if nome == ativo_ssid:
+                r.get_style_context().add_class("conectada")
+            caixa.pack_start(r, True, True, 0)
+            sub = []
+            if nome == ativo_ssid:
+                sub.append("conectada")
+            elif nome in salvas:
+                sub.append("salva")
+            seg = seguranca(ap)
+            if seg != "aberta":
+                caixa.pack_end(Gtk.Image.new_from_icon_name("changes-prevent-symbolic", Gtk.IconSize.MENU), False, False, 0)
+            else:
+                sub.append("aberta")
+            if sub:
+                s = Gtk.Label(label=", ".join(sub))
+                s.get_style_context().add_class("akkos-muted")
+                caixa.pack_end(s, False, False, 0)
+            linha.add(caixa)
+            self.lista.add(linha)
+        if not melhores and self.wifis():
+            vazio = Gtk.Label(label="Nenhuma rede encontrada. Clique em buscar.", margin=16)
+            vazio.get_style_context().add_class("akkos-muted")
+            self.lista.add(vazio)
+        self.lista.show_all()
+        return False
+
+    # ------------------------------------------------------------ ações
+
+    def _alternar_wifi(self, chave, _p):
+        ligar = chave.get_active()
+        try:
+            self.nm.dbus_set_property(NM.DBUS_PATH, NM.DBUS_INTERFACE, "WirelessEnabled",
+                                      GLib.Variant("b", ligar), -1, None, None, None)
+        except (AttributeError, TypeError):
+            self.nm.wireless_set_enabled(ligar)   # libnm antiga
+        ak.tocar("click")
+
+    def _buscar(self, silencioso=False):
+        devs = [d for d in self.wifis() if d.get_state() >= NM.DeviceState.DISCONNECTED]
+        if not devs:
+            return
+        if not silencioso:
+            ak.tocar("click")
+        self.girando.start()
+
+        def pronto(dev, res):
+            try:
+                dev.request_scan_finish(res)
+            except GLib.Error:
+                pass   # o NM recusa buscas muito seguidas; a lista atual continua válida
+            GLib.timeout_add_seconds(3, lambda: (self.girando.stop(), self._preencher_lista()) and False)
+
+        for d in devs:
+            d.request_scan_async(None, pronto)
+
+    def _rede_clicada(self, _lista, linha):
+        dados = getattr(linha, "dados", None)
+        if not dados:
+            return
+        nome, dev, ap = dados
+        ativo = dev.get_active_access_point()
+        if ativo and ssid_texto(ativo) == nome:
+            self._menu_rede_ativa(nome)
+            return
+        ak.tocar("click")
+        salva = next((c for c in self.nm.get_connections()
+                      if c.get_connection_type() == "802-11-wireless" and c.get_id() == nome), None)
+        if salva:
+            self.status(f"Conectando a {nome}…")
+            self.nm.activate_connection_async(salva, dev, ap.get_path(), None, self._ativou, nome)
+            return
+        seg = seguranca(ap)
+        if seg == "enterprise":
+            self.status("Rede corporativa (802.1X): configure em Configurações avançadas.", erro=True)
+            return
+        conexao = NM.SimpleConnection.new()
+        s_con = NM.SettingConnection.new()
+        s_con.set_property(NM.SETTING_CONNECTION_ID, nome)
+        s_con.set_property(NM.SETTING_CONNECTION_TYPE, "802-11-wireless")
+        conexao.add_setting(s_con)
+        s_wifi = NM.SettingWireless.new()
+        s_wifi.set_property(NM.SETTING_WIRELESS_SSID, GLib.Bytes.new(nome.encode()))
+        conexao.add_setting(s_wifi)
+        if seg != "aberta":
+            senha = self._pedir_senha(nome, seg)
+            if senha is None:
+                return
+            s_sec = NM.SettingWirelessSecurity.new()
+            if seg == "wep":
+                s_sec.set_property(NM.SETTING_WIRELESS_SECURITY_KEY_MGMT, "none")
+                s_sec.set_property(NM.SETTING_WIRELESS_SECURITY_WEP_KEY0, senha)
+                s_sec.set_property(NM.SETTING_WIRELESS_SECURITY_WEP_KEY_TYPE, NM.WepKeyType.PASSPHRASE)
+            else:
+                s_sec.set_property(NM.SETTING_WIRELESS_SECURITY_KEY_MGMT, seg)
+                s_sec.set_property(NM.SETTING_WIRELESS_SECURITY_PSK, senha)
+            conexao.add_setting(s_sec)
+        self.status(f"Conectando a {nome}…")
+        self.nm.add_and_activate_connection_async(conexao, dev, ap.get_path(), None, self._adicionou, nome)
+
+    def _pedir_senha(self, nome, seg):
+        d = Gtk.Dialog(title="Senha do Wi-Fi", transient_for=self, modal=True)
+        d.add_button("Cancelar", Gtk.ResponseType.CANCEL)
+        ok = d.add_button("Conectar", Gtk.ResponseType.OK)
+        ok.get_style_context().add_class("suggested-action")
+        d.set_default_response(Gtk.ResponseType.OK)
+        caixa = d.get_content_area()
+        caixa.set_spacing(8)
+        caixa.set_margin_start(16)
+        caixa.set_margin_end(16)
+        caixa.set_margin_top(12)
+        caixa.add(Gtk.Label(label=f"Digite a senha de “{nome}”", xalign=0))
+        campo = Gtk.Entry(visibility=False, activates_default=True, input_purpose=Gtk.InputPurpose.PASSWORD)
+        campo.get_style_context().add_class("akkos-campo")
+        caixa.add(campo)
+        mostrar = Gtk.CheckButton(label="Mostrar senha")
+        mostrar.connect("toggled", lambda b: campo.set_visibility(b.get_active()))
+        caixa.add(mostrar)
+        aviso = Gtk.Label(xalign=0)
+        aviso.get_style_context().add_class("akkos-erro")
+        caixa.add(aviso)
+        d.show_all()
+        while True:
+            resp = d.run()
+            senha = campo.get_text()
+            if resp != Gtk.ResponseType.OK:
+                d.destroy()
+                return None
+            minimo = 5 if seg == "wep" else 8
+            if len(senha) < minimo or (seg != "wep" and len(senha) > 63):
+                aviso.set_text(f"A senha precisa ter entre {minimo} e 63 caracteres.")
+                ak.tocar("error")
+                continue
+            d.destroy()
+            return senha
+
+    def _adicionou(self, cliente, res, nome):
+        try:
+            cliente.add_and_activate_connection_finish(res)
+            self._acompanhar(nome)
+        except GLib.Error as erro:
+            self.status(f"Não foi possível conectar a {nome}: {erro.message}", erro=True)
+
+    def _ativou(self, cliente, res, nome):
+        try:
+            cliente.activate_connection_finish(res)
+            self._acompanhar(nome)
+        except GLib.Error as erro:
+            self.status(f"Não foi possível conectar a {nome}: {erro.message}", erro=True)
+
+    def _acompanhar(self, nome, tentativas=40):
+        """Espera a conexão terminar (até ~20 s) e informa o resultado real."""
+        def checar(restam=[tentativas]):
+            restam[0] -= 1
+            ativa = self.nm.get_primary_connection()
+            if ativa and ativa.get_id() == nome and ativa.get_state() == NM.ActiveConnectionState.ACTIVATED:
+                self.status(f"Conectado a {nome}.")
+                ak.tocar("notify")
+                self.atualizar()
+                return False
+            for dev in self.wifis():
+                if dev.get_state() == NM.DeviceState.FAILED:
+                    motivo = dev.get_state_reason()
+                    texto = "senha incorreta" if motivo in (NM.DeviceStateReason.NO_SECRETS,
+                                                             NM.DeviceStateReason.SUPPLICANT_DISCONNECT) else "falha na conexão"
+                    self.status(f"Não conectou a {nome}: {texto}.", erro=True)
+                    return False
+            if restam[0] <= 0:
+                self.status(f"{nome} demorou demais para responder.", erro=True)
+                return False
+            return True
+        GLib.timeout_add(500, checar)
+
+    def _menu_rede_ativa(self, nome):
+        d = Gtk.MessageDialog(transient_for=self, modal=True, message_type=Gtk.MessageType.QUESTION,
+                              buttons=Gtk.ButtonsType.NONE, text=nome)
+        d.format_secondary_text("Você está conectado a esta rede.")
+        d.add_button("Fechar", 0)
+        d.add_button("Desconectar", 1)
+        d.add_button("Esquecer rede", 2).get_style_context().add_class("destructive-action")
+        resp = d.run()
+        d.destroy()
+        if resp == 1:
+            self._desconectar()
+        elif resp == 2:
+            for c in self.nm.get_connections():
+                if c.get_connection_type() == "802-11-wireless" and c.get_id() == nome:
+                    c.delete_async(None, None, None)
+            self.status(f"{nome} esquecida.")
+
+    def _desconectar(self):
+        ativa = self.nm.get_primary_connection()
+        if ativa:
+            self.nm.deactivate_connection_async(ativa, None, None, None)
+            ak.tocar("click")
+
+    def _desconectar_dev(self, dev):
+        dev.disconnect_async(None, None, None)
+        ak.tocar("click")
+
+    def _conectar_cabo(self, dev):
+        self.nm.activate_connection_async(None, dev, None, None, self._ativou, dev.get_iface())
+
+    def _abrir_editor(self):
+        try:
+            ak.executar_destacado(["nm-connection-editor"])
+        except FileNotFoundError:
+            self.status("Editor avançado não instalado (nm-connection-editor).", erro=True)
+
+    def status(self, texto, erro=False):
+        self.mensagem.set_text(texto)
+        ctx = self.mensagem.get_style_context()
+        (ctx.add_class if erro else ctx.remove_class)("akkos-erro")
+        if erro:
+            ak.tocar("error")
+
+
+class Aplicativo(Gtk.Application):
+    def __init__(self):
+        super().__init__(application_id=APP_ID)
+
+    def do_startup(self):
+        Gtk.Application.do_startup(self)
+        ak.aplicar_css(CSS)
+        Gtk.Settings.get_default().set_property("gtk-application-prefer-dark-theme", True)
+
+    def do_activate(self):
+        janela = self.get_active_window() or Janela(self)
+        janela.show_all()
+        janela.present()
+
+
+if __name__ == "__main__":
+    sys.exit(Aplicativo().run(sys.argv))

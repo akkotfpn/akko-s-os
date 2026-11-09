@@ -1,0 +1,159 @@
+#!/usr/bin/python3
+"""
+akko-soundd — serviço de sons do Akko's OS (roda na sessão do usuário).
+
+Recebe pedidos e intercepta eventos para tocar os sons do sistema na hora:
+
+  * Socket UNIX (datagrama) em $XDG_RUNTIME_DIR/akkos-sound.sock
+      qualquer programa manda o nome do evento: "click", "notify"...
+      (o comando `akko-sound <evento>` e a biblioteca akkos_comum fazem isso)
+  * Janelas novas (libwnck)        → window_open
+  * Pendrive/disco conectado (GIO) → notify   | removido → click
+  * Início da sessão                → boot_chime
+
+Os WAVs ficam pré-carregados no cache do sistema; o som sai pelo PipeWire
+(pw-play), então a latência é a do PipeWire configurado em baixa latência.
+
+Preferências em ~/.config/akkos/sons.conf:
+  ativado=sim|nao
+  janelas=sim|nao
+  inicio=sim|nao
+"""
+
+import os
+import socket
+import subprocess
+import sys
+import time
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Wnck", "3.0")
+from gi.repository import Gio, GLib, Gtk, Wnck  # noqa: E402
+
+SONS = "/usr/share/sounds/akkos"
+EVENTOS = ("boot_chime", "shutdown", "notify", "error", "click", "window_open")
+INTERVALO_MIN = {"click": 0.05, "window_open": 0.25, "notify": 0.4, "error": 0.4}
+
+
+def ler_prefs():
+    prefs = {"ativado": True, "janelas": True, "inicio": True}
+    caminho = os.path.expanduser("~/.config/akkos/sons.conf")
+    try:
+        with open(caminho) as f:
+            for linha in f:
+                if "=" in linha:
+                    k, v = (x.strip() for x in linha.split("=", 1))
+                    if k in prefs:
+                        prefs[k] = v.lower() in ("sim", "yes", "true", "1")
+    except OSError:
+        pass
+    return prefs
+
+
+class Servico:
+    def __init__(self):
+        self.prefs = ler_prefs()
+        self.ultimo = {}
+        self.inicio = time.monotonic()
+        self._preaquecer()
+        self._abrir_socket()
+        self._vigiar_janelas()
+        self._vigiar_volumes()
+        self._vigiar_prefs()
+
+    # --- reprodução -------------------------------------------------------
+
+    def _preaquecer(self):
+        """Lê cada WAV uma vez: fica no cache de páginas, toca sem atraso de disco."""
+        for e in EVENTOS:
+            try:
+                with open(os.path.join(SONS, f"{e}.wav"), "rb") as f:
+                    while f.read(1 << 16):
+                        pass
+            except OSError as erro:
+                print(f"akko-soundd: som ausente {e}: {erro}", file=sys.stderr)
+
+    def tocar(self, evento):
+        if evento not in EVENTOS or not self.prefs["ativado"]:
+            return
+        agora = time.monotonic()
+        if agora - self.ultimo.get(evento, 0) < INTERVALO_MIN.get(evento, 0):
+            return   # evita metralhadora de cliques/janelas
+        self.ultimo[evento] = agora
+        arq = os.path.join(SONS, f"{evento}.wav")
+        for cmd in (["pw-play", "--media-role", "Notification", arq], ["paplay", arq], ["aplay", "-q", arq]):
+            try:
+                subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return
+            except FileNotFoundError:
+                continue
+
+    # --- socket -------------------------------------------------------------
+
+    def _abrir_socket(self):
+        run = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+        self.caminho = os.path.join(run, "akkos-sound.sock")
+        try:
+            os.unlink(self.caminho)
+        except FileNotFoundError:
+            pass
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        self.sock.bind(self.caminho)
+        os.chmod(self.caminho, 0o600)
+        self.sock.setblocking(False)
+        GLib.io_add_watch(self.sock.fileno(), GLib.PRIORITY_HIGH, GLib.IO_IN, self._ao_receber)
+
+    def _ao_receber(self, *_):
+        try:
+            while True:
+                dados = self.sock.recv(64)
+                self.tocar(dados.decode(errors="ignore").strip())
+        except BlockingIOError:
+            pass
+        return True
+
+    # --- janelas ------------------------------------------------------------
+
+    def _vigiar_janelas(self):
+        tela = Wnck.Screen.get_default()
+        if tela is None:
+            return
+        tela.force_update()   # janelas que já existiam não contam como "novas"
+        tela.connect("window-opened", self._janela_aberta)
+
+    def _janela_aberta(self, _tela, janela):
+        if not self.prefs["janelas"]:
+            return
+        if time.monotonic() - self.inicio < 4:
+            return   # ignora as janelas que abrem junto com a sessão
+        if janela.get_window_type() in (Wnck.WindowType.NORMAL, Wnck.WindowType.DIALOG):
+            self.tocar("window_open")
+
+    # --- pendrives ------------------------------------------------------------
+
+    def _vigiar_volumes(self):
+        self.monitor = Gio.VolumeMonitor.get()
+        self.monitor.connect("mount-added", lambda *_: self.tocar("notify"))
+        self.monitor.connect("mount-removed", lambda *_: self.tocar("click"))
+
+    # --- preferências ---------------------------------------------------------
+
+    def _vigiar_prefs(self):
+        arq = Gio.File.new_for_path(os.path.expanduser("~/.config/akkos/sons.conf"))
+        self.mon_prefs = arq.monitor_file(Gio.FileMonitorFlags.NONE, None)
+        self.mon_prefs.connect("changed", lambda *_: setattr(self, "prefs", ler_prefs()))
+
+
+def main():
+    Gtk.init(sys.argv)   # Wnck precisa do display inicializado
+    servico = Servico()
+    if "--sem-inicio" not in sys.argv and servico.prefs["inicio"]:
+        GLib.timeout_add(600, lambda: servico.tocar("boot_chime") or False)
+    print(f"akko-soundd: ouvindo em {servico.caminho}", flush=True)
+    GLib.MainLoop().run()
+
+
+if __name__ == "__main__":
+    main()

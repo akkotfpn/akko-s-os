@@ -1,0 +1,695 @@
+#!/usr/bin/python3
+"""
+akko-painel — barra de tarefas do Akko's OS (X11, GTK 3).
+
+  [logo/menu] [janelas abertas ............] [rede] [volume] [relógio] [energia]
+
+  * Menu de aplicativos com busca (lê os .desktop do sistema e do usuário,
+    inclusive os atalhos que o Wine cria ao instalar programas Windows)
+  * Lista de janelas (libwnck): clique ativa/minimiza
+  * Rede (libnm): ícone com o estado real; clique abre o akko-rede
+  * Volume (PipeWire via wpctl): clique abre controle; rolagem ajusta
+  * Relógio com calendário
+  * Energia: bloquear, sair, reiniciar, desligar (com som de desligamento)
+  * Monta pendrives automaticamente e avisa (udisks2 via GIO)
+
+`akko-painel --menu` abre/fecha o menu na instância que já está rodando
+(é o que a tecla Super chama).
+"""
+
+import os
+import re
+import subprocess
+import sys
+import time
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+gi.require_version("Wnck", "3.0")
+gi.require_version("NM", "1.0")
+from gi.repository import Gdk, Gio, GLib, Gtk, NM, Pango, Wnck  # noqa: E402
+
+sys.path.insert(0, "/usr/lib/akkos/python")
+import akkos_comum as ak  # noqa: E402
+
+ALTURA = 44
+APP_ID = "org.akkos.Painel"
+
+CSS = """
+window.painel { background-color: alpha(@akk_bg, 0.94); border-top: 1px solid @akk_surface_alt; }
+.painel button { background: transparent; border: none; box-shadow: none; border-radius: 8px;
+                 color: @akk_text; padding: 2px 8px; min-height: 0; }
+.painel button:hover { background-color: @akk_surface_alt; }
+.painel button.tarefa { border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0; }
+.painel button.tarefa.ativa { background-color: @akk_surface; border-bottom: 2px solid @akk_cyan; }
+.painel button.tarefa.minimizada label { color: @akk_muted; }
+.painel .relogio { font-weight: 600; }
+window.popup { background-color: @akk_bg; border: 1px solid @akk_surface_alt; border-radius: 12px; }
+.popup .item-app { padding: 6px 10px; border-radius: 8px; }
+.popup row:selected .item-app, .popup row:hover .item-app { background-color: @akk_surface_alt; }
+.popup .categoria { color: @akk_cyan; font-weight: 700; font-size: 9pt; padding: 8px 10px 2px 10px; }
+.popup list { background: transparent; }
+.popup scale trough { min-height: 6px; border-radius: 3px; background-color: @akk_surface_alt; }
+.popup scale highlight { background-image: linear-gradient(90deg, @akk_cyan, @akk_indigo); border-radius: 3px; }
+.popup calendar { background: transparent; color: @akk_text; }
+.popup calendar:selected { background-color: @akk_indigo; border-radius: 6px; }
+"""
+
+CATEGORIAS = [
+    ("Favoritos", None),
+    ("Internet", {"Network", "WebBrowser", "Email", "Chat"}),
+    ("Escritório", {"Office", "TextEditor", "WordProcessor"}),
+    ("Multimídia", {"AudioVideo", "Audio", "Video", "Graphics", "Viewer"}),
+    ("Jogos", {"Game"}),
+    ("Windows", {"Wine"}),
+    ("Ferramentas", {"Utility", "Development", "FileManager", "TerminalEmulator"}),
+    ("Sistema", {"System", "Settings", "Security", "Monitor"}),
+]
+FAVORITOS = ["akko-arquivos.desktop", "akko-navegador.desktop", "xfce4-terminal.desktop",
+             "akko-rede.desktop", "org.xfce.mousepad.desktop"]
+
+
+def som_clique(*_):
+    ak.tocar("click")
+
+
+def cmd(argv):
+    try:
+        ak.executar_destacado(argv)
+    except FileNotFoundError:
+        ak.tocar("error")
+
+
+# --------------------------------------------------------------------------
+# janelas flutuantes (menu, volume, calendário, energia)
+# --------------------------------------------------------------------------
+
+class Popup(Gtk.Window):
+    """Janela sem borda posicionada acima do painel; some ao perder o foco."""
+
+    def __init__(self, painel, largura, altura):
+        super().__init__(type=Gtk.WindowType.TOPLEVEL)
+        self.painel = painel
+        self.get_style_context().add_class("popup")
+        self.get_style_context().add_class("akkos")
+        self.set_decorated(False)
+        self.set_skip_taskbar_hint(True)
+        self.set_skip_pager_hint(True)
+        self.set_keep_above(True)
+        self.set_type_hint(Gdk.WindowTypeHint.DIALOG)
+        self.set_default_size(largura, altura)
+        self.largura, self.altura = largura, altura
+        self.connect("focus-out-event", lambda *_: self.esconder())
+        self.connect("key-press-event", self._tecla)
+
+    def _tecla(self, _w, ev):
+        if ev.keyval == Gdk.KEY_Escape:
+            self.esconder()
+            return True
+        return False
+
+    def mostrar(self, x_ancora):
+        geo = self.painel.geometria()
+        x = min(max(geo.x + 8, x_ancora - self.largura // 2), geo.x + geo.width - self.largura - 8)
+        y = geo.y + geo.height - ALTURA - self.altura - 8
+        self.move(x, y)
+        self.show_all()
+        self.present_with_time(Gtk.get_current_event_time() or Gdk.CURRENT_TIME)
+        self.get_window() and self.get_window().focus(Gdk.CURRENT_TIME)
+
+    def esconder(self):
+        self.hide()
+        return False
+
+    def alternar(self, x_ancora):
+        if self.get_visible():
+            self.esconder()
+        else:
+            self.mostrar(x_ancora)
+
+
+class MenuApps(Popup):
+    def __init__(self, painel):
+        super().__init__(painel, 420, 560)
+        caixa = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin=12)
+        topo = Gtk.Box(spacing=10)
+        logo = Gtk.Image.new_from_icon_name("akkos-logo", Gtk.IconSize.DND)
+        titulo = Gtk.Label(label="Akko's OS", xalign=0)
+        titulo.get_style_context().add_class("akkos-titulo")
+        topo.pack_start(logo, False, False, 0)
+        topo.pack_start(titulo, True, True, 0)
+        caixa.pack_start(topo, False, False, 0)
+
+        self.busca = Gtk.SearchEntry(placeholder_text="Buscar aplicativos…")
+        self.busca.get_style_context().add_class("akkos-campo")
+        self.busca.connect("search-changed", lambda *_: self.lista.invalidate_filter())
+        self.busca.connect("activate", self._abrir_primeiro)
+        self.busca.connect("key-press-event", self._seta_baixo)
+        caixa.pack_start(self.busca, False, False, 0)
+
+        rolagem = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER)
+        self.lista = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE, activate_on_single_click=True)
+        self.lista.set_filter_func(self._filtro)
+        self.lista.set_header_func(self._cabecalho)
+        self.lista.connect("row-activated", self._ativar)
+        rolagem.add(self.lista)
+        caixa.pack_start(rolagem, True, True, 0)
+        self.add(caixa)
+
+        self.monitor = Gio.AppInfoMonitor.get()
+        self.monitor.connect("changed", lambda *_: self.recarregar())
+        self.recarregar()
+
+    def recarregar(self):
+        for filho in self.lista.get_children():
+            self.lista.remove(filho)
+        apps = [a for a in Gio.AppInfo.get_all()
+                if isinstance(a, Gio.DesktopAppInfo) and a.should_show()]
+        itens = []
+        for app in apps:
+            cats = set((app.get_categories() or "").split(";"))
+            if (app.get_executable() or "").startswith(("wine", "env")) or "wine" in (app.get_filename() or ""):
+                cats.add("Wine")
+            categoria = "Outros"
+            for nome, conj in CATEGORIAS[1:]:
+                if conj & cats:
+                    categoria = nome
+                    break
+            itens.append((categoria, app))
+            if app.get_id() in FAVORITOS:
+                itens.append(("Favoritos", app))
+        ordem = {n: i for i, (n, _) in enumerate(CATEGORIAS)}
+        itens.sort(key=lambda it: (ordem.get(it[0], 99),
+                                   FAVORITOS.index(it[1].get_id()) if it[0] == "Favoritos" else 0,
+                                   it[1].get_display_name().casefold()))
+        for categoria, app in itens:
+            linha = Gtk.ListBoxRow()
+            linha.app, linha.categoria = app, categoria
+            linha.busca = " ".join(filter(None, [app.get_display_name(), app.get_generic_name() or "",
+                                                  app.get_description() or "", " ".join(app.get_keywords() or [])])).casefold()
+            caixa = Gtk.Box(spacing=12)
+            caixa.get_style_context().add_class("item-app")
+            icone = Gtk.Image.new_from_gicon(app.get_icon() or Gio.ThemedIcon.new("application-x-executable"),
+                                             Gtk.IconSize.LARGE_TOOLBAR)
+            icone.set_pixel_size(28)
+            textos = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            nome = Gtk.Label(label=app.get_display_name(), xalign=0, ellipsize=Pango.EllipsizeMode.END)
+            textos.pack_start(nome, False, False, 0)
+            desc = app.get_generic_name() or app.get_description()
+            if desc:
+                d = Gtk.Label(label=desc, xalign=0, ellipsize=Pango.EllipsizeMode.END)
+                d.get_style_context().add_class("akkos-muted")
+                textos.pack_start(d, False, False, 0)
+            caixa.pack_start(icone, False, False, 0)
+            caixa.pack_start(textos, True, True, 0)
+            linha.add(caixa)
+            self.lista.add(linha)
+        self.lista.show_all()
+
+    def _buscando(self):
+        return self.busca.get_text().strip().casefold()
+
+    def _filtro(self, linha):
+        termo = self._buscando()
+        if not termo:
+            return True
+        return linha.categoria != "Favoritos" and all(p in linha.busca for p in termo.split())
+
+    def _cabecalho(self, linha, anterior):
+        if self._buscando():
+            linha.set_header(None)
+            return
+        if anterior is None or anterior.categoria != linha.categoria:
+            rotulo = Gtk.Label(label=linha.categoria.upper(), xalign=0)
+            rotulo.get_style_context().add_class("categoria")
+            linha.set_header(rotulo)
+        else:
+            linha.set_header(None)
+
+    def _visiveis(self):
+        return [l for l in self.lista.get_children() if l.get_child_visible() and self._filtro(l)]
+
+    def _abrir_primeiro(self, *_):
+        vis = self._visiveis()
+        if vis:
+            self._ativar(self.lista, vis[0])
+
+    def _seta_baixo(self, _w, ev):
+        if ev.keyval == Gdk.KEY_Down:
+            vis = self._visiveis()
+            if vis:
+                self.lista.select_row(vis[0])
+                vis[0].grab_focus()
+            return True
+        return False
+
+    def _ativar(self, _lista, linha):
+        ak.tocar("click")
+        try:
+            linha.app.launch([], Gdk.Display.get_default().get_app_launch_context())
+        except GLib.Error:
+            ak.tocar("error")
+        self.esconder()
+
+    def mostrar(self, x):
+        self.busca.set_text("")
+        super().mostrar(x)
+        self.busca.grab_focus()
+
+
+class PopupVolume(Popup):
+    def __init__(self, painel):
+        super().__init__(painel, 300, 110)
+        caixa = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin=14)
+        topo = Gtk.Box(spacing=8)
+        self.mudo = Gtk.ToggleButton()
+        self.mudo.get_style_context().add_class("akkos-plano")
+        self.icone = Gtk.Image.new_from_icon_name("audio-volume-high-symbolic", Gtk.IconSize.BUTTON)
+        self.mudo.add(self.icone)
+        self.mudo.connect("toggled", self._alternar_mudo)
+        self.rotulo = Gtk.Label(label="Volume", xalign=0)
+        topo.pack_start(self.mudo, False, False, 0)
+        topo.pack_start(self.rotulo, True, True, 0)
+        self.escala = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1)
+        self.escala.set_draw_value(False)
+        self.escala.connect("value-changed", self._mudou)
+        caixa.pack_start(topo, False, False, 0)
+        caixa.pack_start(self.escala, False, False, 0)
+        self.add(caixa)
+        self._atualizando = False
+
+    def mostrar(self, x):
+        vol, mudo = ler_volume()
+        self._atualizando = True
+        self.escala.set_value(vol if vol is not None else 0)
+        self.mudo.set_active(bool(mudo))
+        self._atualizando = False
+        self.rotulo.set_text("Volume" if vol is not None else "Sem saída de áudio")
+        super().mostrar(x)
+
+    def _mudou(self, escala):
+        if self._atualizando:
+            return
+        definir_volume(int(escala.get_value()))
+        self.painel.atualizar_volume()
+
+    def _alternar_mudo(self, botao):
+        if self._atualizando:
+            return
+        subprocess.run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "1" if botao.get_active() else "0"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.painel.atualizar_volume()
+
+
+class PopupRelogio(Popup):
+    def __init__(self, painel):
+        super().__init__(painel, 300, 300)
+        caixa = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin=12)
+        self.data = Gtk.Label(xalign=0)
+        self.data.get_style_context().add_class("akkos-titulo")
+        self.cal = Gtk.Calendar()
+        caixa.pack_start(self.data, False, False, 0)
+        caixa.pack_start(self.cal, True, True, 0)
+        self.add(caixa)
+
+    def mostrar(self, x):
+        agora = GLib.DateTime.new_now_local()
+        self.data.set_text(data_por_extenso(agora))
+        self.cal.select_month(agora.get_month() - 1, agora.get_year())
+        self.cal.select_day(agora.get_day_of_month())
+        super().mostrar(x)
+
+
+class PopupEnergia(Popup):
+    OPCOES = [
+        ("system-lock-screen-symbolic", "Bloquear", "bloquear"),
+        ("system-log-out-symbolic", "Sair da sessão", "sair"),
+        ("system-reboot-symbolic", "Reiniciar", "reiniciar"),
+        ("system-shutdown-symbolic", "Desligar", "desligar"),
+    ]
+
+    def __init__(self, painel):
+        super().__init__(painel, 230, 200)
+        caixa = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, margin=8)
+        for icone, texto, acao in self.OPCOES:
+            b = Gtk.Button()
+            b.get_style_context().add_class("akkos-plano")
+            linha = Gtk.Box(spacing=12)
+            linha.pack_start(Gtk.Image.new_from_icon_name(icone, Gtk.IconSize.BUTTON), False, False, 0)
+            linha.pack_start(Gtk.Label(label=texto, xalign=0), True, True, 0)
+            b.add(linha)
+            b.connect("clicked", self._acao, acao)
+            caixa.pack_start(b, False, False, 0)
+        self.add(caixa)
+
+    def _acao(self, _b, acao):
+        self.esconder()
+        if acao == "bloquear":
+            ak.tocar("click")
+            cmd(["dm-tool", "lock"])
+        elif acao == "sair":
+            ak.tocar("click")
+            cmd(["openbox", "--exit"])
+        else:
+            # o som de desligamento toca inteiro antes de pedir ao systemd
+            ak.tocar("shutdown", esperar=True)
+            subprocess.Popen(["systemctl", "poweroff" if acao == "desligar" else "reboot"])
+
+
+# --------------------------------------------------------------------------
+# utilidades: volume, data
+# --------------------------------------------------------------------------
+
+def ler_volume():
+    """(volume 0-100 ou None, mudo) da saída padrão, via wpctl."""
+    try:
+        saida = subprocess.run(["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"], capture_output=True,
+                               text=True, timeout=2).stdout
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None, False
+    m = re.search(r"Volume:\s*([\d.]+)", saida)
+    if not m:
+        return None, False
+    return round(float(m.group(1)) * 100), "MUTED" in saida
+
+
+def definir_volume(pct):
+    subprocess.run(["wpctl", "set-volume", "-l", "1.0", "@DEFAULT_AUDIO_SINK@", f"{pct}%"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+DIAS = ["segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado", "domingo"]
+MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto",
+         "setembro", "outubro", "novembro", "dezembro"]
+
+
+def data_por_extenso(dt):
+    return f"{DIAS[dt.get_day_of_week() - 1].capitalize()}, {dt.get_day_of_month()} de {MESES[dt.get_month() - 1]}"
+
+
+# --------------------------------------------------------------------------
+# o painel
+# --------------------------------------------------------------------------
+
+class Painel(Gtk.ApplicationWindow):
+    def __init__(self, app):
+        super().__init__(application=app, title="Akko's OS - Painel")
+        self.get_style_context().add_class("painel")
+        self.set_decorated(False)
+        self.set_type_hint(Gdk.WindowTypeHint.DOCK)
+        self.set_skip_taskbar_hint(True)
+        self.set_skip_pager_hint(True)
+        self.set_keep_above(True)
+        self.stick()
+
+        barra = Gtk.Box(spacing=4, margin_start=6, margin_end=6)
+        self.add(barra)
+
+        self.botao_menu = Gtk.Button()
+        self.botao_menu.set_tooltip_text("Aplicativos (Super)")
+        self.botao_menu.add(Gtk.Image.new_from_icon_name("akkos-logo", Gtk.IconSize.LARGE_TOOLBAR))
+        self.botao_menu.connect("clicked", lambda b: (som_clique(), self.menu.alternar(self._x_de(b))))
+        barra.pack_start(self.botao_menu, False, False, 0)
+
+        self.tarefas = Gtk.Box(spacing=2)
+        barra.pack_start(self.tarefas, True, True, 6)
+
+        self.botao_rede = Gtk.Button()
+        self.icone_rede = Gtk.Image.new_from_icon_name("network-offline-symbolic", Gtk.IconSize.BUTTON)
+        self.botao_rede.add(self.icone_rede)
+        self.botao_rede.connect("clicked", lambda *_: (som_clique(), cmd(["akko-rede"])))
+        barra.pack_start(self.botao_rede, False, False, 0)
+
+        self.botao_vol = Gtk.Button()
+        self.icone_vol = Gtk.Image.new_from_icon_name("audio-volume-high-symbolic", Gtk.IconSize.BUTTON)
+        self.botao_vol.add(self.icone_vol)
+        self.botao_vol.connect("clicked", lambda b: (som_clique(), self.volume.alternar(self._x_de(b))))
+        self.botao_vol.add_events(Gdk.EventMask.SCROLL_MASK | Gdk.EventMask.SMOOTH_SCROLL_MASK)
+        self.botao_vol.connect("scroll-event", self._rolar_volume)
+        barra.pack_start(self.botao_vol, False, False, 0)
+
+        self.botao_relogio = Gtk.Button()
+        self.relogio = Gtk.Label()
+        self.relogio.get_style_context().add_class("relogio")
+        self.botao_relogio.add(self.relogio)
+        self.botao_relogio.connect("clicked", lambda b: (som_clique(), self.calendario.alternar(self._x_de(b))))
+        barra.pack_start(self.botao_relogio, False, False, 0)
+
+        botao_energia = Gtk.Button()
+        botao_energia.set_tooltip_text("Energia")
+        botao_energia.add(Gtk.Image.new_from_icon_name("system-shutdown-symbolic", Gtk.IconSize.BUTTON))
+        botao_energia.connect("clicked", lambda b: (som_clique(), self.energia.alternar(self._x_de(b))))
+        barra.pack_start(botao_energia, False, False, 0)
+
+        self.menu = MenuApps(self)
+        self.volume = PopupVolume(self)
+        self.calendario = PopupRelogio(self)
+        self.energia = PopupEnergia(self)
+
+        self._posicionar()
+        Gdk.Screen.get_default().connect("monitors-changed", lambda *_: self._posicionar())
+        self.connect("realize", lambda *_: self._reservar_espaco())
+
+        self._iniciar_janelas()
+        self._iniciar_rede()
+        self._iniciar_montagem()
+        self.atualizar_relogio()
+        GLib.timeout_add_seconds(1, self.atualizar_relogio)
+        self.atualizar_volume()
+        GLib.timeout_add_seconds(3, lambda: self.atualizar_volume() or True)
+
+    # --- geometria -----------------------------------------------------------
+
+    def geometria(self):
+        display = Gdk.Display.get_default()
+        mon = display.get_primary_monitor() or display.get_monitor(0)
+        return mon.get_geometry()
+
+    def _posicionar(self):
+        geo = self.geometria()
+        self.set_size_request(geo.width, ALTURA)
+        self.resize(geo.width, ALTURA)
+        self.move(geo.x, geo.y + geo.height - ALTURA)
+        self._reservar_espaco()
+
+    def _reservar_espaco(self):
+        """Pede ao gerenciador de janelas para não cobrir o painel
+        (_NET_WM_STRUT_PARTIAL). O Openbox também tem margem configurada."""
+        janela = self.get_window()
+        if not janela:
+            return
+        geo = self.geometria()
+        tela_altura = Gdk.Screen.get_default().get_height()
+        fundo = tela_altura - (geo.y + geo.height) + ALTURA
+        try:
+            subprocess.run(["xprop", "-id", str(janela.get_xid()), "-f", "_NET_WM_STRUT_PARTIAL", "32c",
+                            "-set", "_NET_WM_STRUT_PARTIAL",
+                            f"0, 0, 0, {fundo}, 0, 0, 0, 0, 0, 0, {geo.x}, {geo.x + geo.width - 1}"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+        except (FileNotFoundError, subprocess.TimeoutExpired, AttributeError):
+            pass
+
+    def _x_de(self, widget):
+        janela = self.get_window()
+        _, ox, _ = janela.get_origin() if janela else (0, 0, 0)
+        aloc = widget.get_allocation()
+        return ox + aloc.x + aloc.width // 2
+
+    def abrir_menu(self):
+        self.menu.alternar(self._x_de(self.botao_menu))
+
+    # --- relógio e volume ------------------------------------------------------
+
+    def atualizar_relogio(self):
+        agora = GLib.DateTime.new_now_local()
+        self.relogio.set_text(agora.format("%H:%M"))
+        self.botao_relogio.set_tooltip_text(data_por_extenso(agora) + agora.format(" de %Y"))
+        return True
+
+    def atualizar_volume(self):
+        vol, mudo = ler_volume()
+        if vol is None:
+            nome, dica = "audio-volume-muted-symbolic", "Sem saída de áudio"
+        elif mudo or vol == 0:
+            nome, dica = "audio-volume-muted-symbolic", "Mudo"
+        elif vol < 34:
+            nome, dica = "audio-volume-low-symbolic", f"Volume {vol}%"
+        elif vol < 67:
+            nome, dica = "audio-volume-medium-symbolic", f"Volume {vol}%"
+        else:
+            nome, dica = "audio-volume-high-symbolic", f"Volume {vol}%"
+        self.icone_vol.set_from_icon_name(nome, Gtk.IconSize.BUTTON)
+        self.botao_vol.set_tooltip_text(dica)
+
+    def _rolar_volume(self, _w, ev):
+        vol, _ = ler_volume()
+        if vol is None:
+            return True
+        if ev.direction == Gdk.ScrollDirection.SMOOTH:
+            passo = -5 if ev.delta_y > 0 else 5
+        else:
+            passo = 5 if ev.direction == Gdk.ScrollDirection.UP else -5
+        definir_volume(max(0, min(100, vol + passo)))
+        self.atualizar_volume()
+        return True
+
+    # --- lista de janelas ---------------------------------------------------------
+
+    def _iniciar_janelas(self):
+        self.tela = Wnck.Screen.get_default()
+        self.botoes = {}
+        for sinal in ("window-opened", "window-closed", "active-window-changed"):
+            self.tela.connect(sinal, lambda *_: self._atualizar_tarefas())
+        self.tela.force_update()
+        self._atualizar_tarefas()
+
+    def _atualizar_tarefas(self):
+        ativa = self.tela.get_active_window()
+        atuais = [j for j in self.tela.get_windows()
+                  if j.get_window_type() in (Wnck.WindowType.NORMAL, Wnck.WindowType.DIALOG)
+                  and not j.is_skip_tasklist()]
+        for xid in list(self.botoes):
+            if xid not in {j.get_xid() for j in atuais}:
+                self.botoes.pop(xid).destroy()
+        for j in atuais:
+            xid = j.get_xid()
+            if xid not in self.botoes:
+                self.botoes[xid] = self._criar_botao_tarefa(j)
+            b = self.botoes[xid]
+            ctx = b.get_style_context()
+            for classe, ligada in (("ativa", ativa is not None and ativa.get_xid() == xid),
+                                   ("minimizada", j.is_minimized())):
+                (ctx.add_class if ligada else ctx.remove_class)(classe)
+        largura = max(90, min(220, (self.geometria().width - 420) // max(1, len(atuais))))
+        for b in self.botoes.values():
+            b.set_size_request(largura, -1)
+
+    def _criar_botao_tarefa(self, janela):
+        b = Gtk.Button()
+        b.get_style_context().add_class("tarefa")
+        caixa = Gtk.Box(spacing=6)
+        icone = Gtk.Image()
+        rotulo = Gtk.Label(ellipsize=Pango.EllipsizeMode.END, xalign=0)
+
+        def atualizar(*_):
+            pix = janela.get_mini_icon()
+            if pix:
+                icone.set_from_pixbuf(pix)
+            rotulo.set_text(janela.get_name())
+            b.set_tooltip_text(janela.get_name())
+
+        janela.connect("name-changed", atualizar)
+        janela.connect("icon-changed", atualizar)
+        janela.connect("state-changed", lambda *_: self._atualizar_tarefas())
+        atualizar()
+        caixa.pack_start(icone, False, False, 0)
+        caixa.pack_start(rotulo, True, True, 0)
+        b.add(caixa)
+
+        def clicar(_b):
+            ak.tocar("click")
+            t = Gtk.get_current_event_time() or int(time.time())
+            if janela.is_active() and not janela.is_minimized():
+                janela.minimize()
+            else:
+                janela.activate(t)
+
+        b.connect("clicked", clicar)
+        self.tarefas.pack_start(b, False, False, 0)
+        b.show_all()
+        return b
+
+    # --- rede -----------------------------------------------------------------------
+
+    def _iniciar_rede(self):
+        try:
+            self.nm = NM.Client.new(None)
+        except GLib.Error:
+            self.nm = None
+            self.botao_rede.set_tooltip_text("NetworkManager indisponível")
+            return
+        for sinal in ("notify::primary-connection", "notify::state", "notify::connectivity"):
+            self.nm.connect(sinal, lambda *_: self._atualizar_rede())
+        GLib.timeout_add_seconds(5, lambda: self._atualizar_rede() or True)
+        self._atualizar_rede()
+
+    def _atualizar_rede(self):
+        if not self.nm:
+            return
+        ativa = self.nm.get_primary_connection()
+        if ativa is None or self.nm.get_state() < NM.State.CONNECTED_LOCAL:
+            self.icone_rede.set_from_icon_name("network-offline-symbolic", Gtk.IconSize.BUTTON)
+            self.botao_rede.set_tooltip_text("Desconectado — clique para conectar")
+            return
+        nome = ativa.get_id()
+        ip = ""
+        cfg = ativa.get_ip4_config()
+        if cfg and cfg.get_addresses():
+            ip = cfg.get_addresses()[0].get_address()
+        sem_internet = self.nm.get_connectivity() in (NM.ConnectivityState.LIMITED, NM.ConnectivityState.NONE)
+        if ativa.get_connection_type() == "802-11-wireless":
+            sinal = 0
+            for dev in ativa.get_devices():
+                if isinstance(dev, NM.DeviceWifi) and dev.get_active_access_point():
+                    sinal = dev.get_active_access_point().get_strength()
+            nivel = "excellent" if sinal > 75 else "good" if sinal > 50 else "ok" if sinal > 25 else "weak"
+            icone = f"network-wireless-signal-{nivel}-symbolic"
+        else:
+            icone = "network-wired-symbolic"
+        if sem_internet:
+            icone = "network-wired-no-route-symbolic" if "wired" in icone else "network-wireless-no-route-symbolic"
+        self.icone_rede.set_from_icon_name(icone, Gtk.IconSize.BUTTON)
+        dica = f"{nome}" + (f" — {ip}" if ip else "") + (" (sem internet)" if sem_internet else "")
+        self.botao_rede.set_tooltip_text(dica)
+
+    # --- pendrives ------------------------------------------------------------------
+
+    def _iniciar_montagem(self):
+        self.volumes = Gio.VolumeMonitor.get()
+        self.volumes.connect("volume-added", self._volume_novo)
+
+    def _volume_novo(self, _mon, volume):
+        if not volume.can_mount() or volume.get_mount() is not None or not volume.should_automount():
+            return
+        operacao = Gtk.MountOperation.new(self)
+
+        def montado(vol, resultado):
+            try:
+                vol.mount_finish(resultado)
+            except GLib.Error as erro:
+                ak.tocar("error")
+                cmd(["notify-send", "-i", "drive-removable-media", "Não foi possível abrir o dispositivo",
+                     f"{vol.get_name()}: {erro.message}"])
+                return
+            mount = vol.get_mount()
+            caminho = mount.get_root().get_path() if mount else ""
+            cmd(["notify-send", "-i", "drive-removable-media", f"{vol.get_name()} conectado",
+                 f"Disponível em Arquivos{(' — ' + caminho) if caminho else ''}"])
+
+        volume.mount(Gio.MountMountFlags.NONE, operacao, None, montado)
+
+
+class Aplicativo(Gtk.Application):
+    def __init__(self):
+        super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
+        self.janela = None
+
+    def do_startup(self):
+        Gtk.Application.do_startup(self)
+        ak.aplicar_css(CSS)
+        Gtk.Settings.get_default().set_property("gtk-application-prefer-dark-theme", True)
+
+    def do_command_line(self, linha):
+        args = linha.get_arguments()[1:]
+        if self.janela is None:
+            self.janela = Painel(self)
+            self.janela.show_all()
+        if "--menu" in args:
+            self.janela.abrir_menu()
+        return 0
+
+
+if __name__ == "__main__":
+    sys.exit(Aplicativo().run(sys.argv))

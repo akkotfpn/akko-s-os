@@ -1,0 +1,1233 @@
+#!/usr/bin/python3
+"""
+akko-arquivos — explorador de arquivos do Akko's OS (GTK 3).
+
+  * Grade (com miniaturas de imagens) ou lista (nome, tamanho, tipo, data)
+  * Barra de endereço editável, voltar/avançar/subir, busca na pasta
+  * Copiar / recortar / colar (em segundo plano, com progresso), excluir para
+    a lixeira (Delete) ou de vez (Shift+Delete, com confirmação), renomear,
+    nova pasta
+  * Barra lateral com pastas pessoais, lixeira e dispositivos: pendrives
+    aparecem e são montados na hora (udisks2 via GIO), com botão de ejetar
+  * Pré-visualização: imagem, começo de arquivos de texto, ou detalhes
+  * Duplo clique executa de verdade:
+      .exe / .msi          → win-launcher (compatibilidade Windows)
+      .AppImage / ELF       → pede confirmação e executa
+      .deb                  → instala com apt (pede confirmação)
+      .flatpakref           → instala com Flatpak
+      outros                → aplicativo padrão do tipo de arquivo
+
+Atalhos: Ctrl+C/X/V, Delete, Shift+Delete, F2, Ctrl+Shift+N, Ctrl+L,
+Alt+←/→, Backspace, Ctrl+H (ocultos), Ctrl+1/Ctrl+2 (grade/lista),
+F5, Ctrl+F, F9 (pré-visualização).
+
+Uso: akko-arquivos [PASTA]
+"""
+
+import os
+import shutil
+import stat
+import subprocess
+import sys
+import threading
+import time
+from urllib.parse import unquote, urlparse
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+gi.require_version("GdkPixbuf", "2.0")
+from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango  # noqa: E402
+
+sys.path.insert(0, "/usr/lib/akkos/python")
+import akkos_comum as ak  # noqa: E402
+
+APP_ID = "org.akkos.Arquivos"
+TAM_ICONE = 64
+TAM_MINIATURA = 96
+LIMITE_MINIATURA = 25 * 1024 * 1024
+EXT_WINDOWS = (".exe", ".msi", ".bat", ".com")
+EXT_TEXTO = (".txt", ".md", ".py", ".sh", ".conf", ".cfg", ".ini", ".json", ".xml", ".log",
+             ".csv", ".yml", ".yaml", ".toml", ".c", ".h", ".js", ".html", ".css")
+
+# colunas do modelo
+C_ICONE, C_NOME, C_CAMINHO, C_EH_PASTA, C_TAMANHO, C_TAM_TXT, C_TIPO, C_DATA, C_DATA_TXT, C_OCULTO = range(10)
+
+CSS = """
+.lateral { background-color: @akk_surface; }
+.lateral row { padding: 6px 10px; border-radius: 8px; margin: 1px 6px; }
+.lateral row:selected { background-color: @akk_surface_alt; color: @akk_cyan; }
+.lateral .titulo-secao { color: @akk_muted; font-size: 9pt; font-weight: 700; margin: 10px 14px 4px 14px; }
+iconview.view { background-color: @akk_bg; }
+iconview.view:selected { background-color: alpha(@akk_indigo, 0.55); border-radius: 8px; }
+treeview.view { background-color: @akk_bg; }
+treeview.view:selected { background-color: alpha(@akk_indigo, 0.55); }
+.previa { background-color: @akk_surface; border-left: 1px solid @akk_surface_alt; }
+.status { color: @akk_muted; padding: 4px 10px; border-top: 1px solid @akk_surface_alt; }
+"""
+
+
+def gfile_eh_executavel_elf(caminho):
+    try:
+        with open(caminho, "rb") as f:
+            return f.read(4) == b"\x7fELF"
+    except OSError:
+        return False
+
+
+def data_txt(ts):
+    return time.strftime("%d/%m/%Y %H:%M", time.localtime(ts))
+
+
+def nome_unico(destino_dir, nome):
+    """'arquivo.txt' → 'arquivo (cópia).txt' → 'arquivo (cópia 2).txt'…"""
+    alvo = os.path.join(destino_dir, nome)
+    if not os.path.lexists(alvo):
+        return alvo
+    base, ext = os.path.splitext(nome)
+    if os.path.isdir(alvo):
+        base, ext = nome, ""
+    n = 1
+    while True:
+        sufixo = " (cópia)" if n == 1 else f" (cópia {n})"
+        alvo = os.path.join(destino_dir, f"{base}{sufixo}{ext}")
+        if not os.path.lexists(alvo):
+            return alvo
+        n += 1
+
+
+class Operacao:
+    """Copiar/mover arquivos numa thread, reportando progresso para a interface."""
+
+    def __init__(self, janela, origens, destino, mover):
+        self.janela, self.origens, self.destino, self.mover = janela, origens, destino, mover
+        self.total = sum(self._tamanho(o) for o in origens)
+        self.feito = 0
+        self.erros = []
+        self.cancelar = False
+
+    @staticmethod
+    def _tamanho(caminho):
+        if os.path.isdir(caminho) and not os.path.islink(caminho):
+            total = 0
+            for raiz, _dirs, arqs in os.walk(caminho):
+                for a in arqs:
+                    try:
+                        total += os.lstat(os.path.join(raiz, a)).st_size
+                    except OSError:
+                        pass
+            return total
+        try:
+            return os.lstat(caminho).st_size
+        except OSError:
+            return 0
+
+    def _copiar_arquivo(self, src, dst):
+        with open(src, "rb") as fi, open(dst, "wb") as fo:
+            while not self.cancelar:
+                bloco = fi.read(1 << 20)
+                if not bloco:
+                    break
+                fo.write(bloco)
+                self.feito += len(bloco)
+                GLib.idle_add(self.janela.progresso, self)
+        shutil.copystat(src, dst)
+
+    def _copiar(self, src, dst):
+        if os.path.islink(src):
+            os.symlink(os.readlink(src), dst)
+        elif os.path.isdir(src):
+            os.mkdir(dst)
+            for item in os.listdir(src):
+                if self.cancelar:
+                    return
+                self._copiar(os.path.join(src, item), os.path.join(dst, item))
+            shutil.copystat(src, dst)
+        else:
+            self._copiar_arquivo(src, dst)
+
+    def executar(self):
+        for origem in self.origens:
+            if self.cancelar:
+                break
+            nome = os.path.basename(origem.rstrip("/"))
+            try:
+                if os.path.abspath(self.destino).startswith(os.path.abspath(origem) + os.sep) or \
+                        os.path.abspath(self.destino) == os.path.abspath(origem):
+                    raise OSError("não dá pra colocar uma pasta dentro dela mesma")
+                if self.mover and os.path.dirname(os.path.abspath(origem)) == os.path.abspath(self.destino):
+                    continue   # recortar e colar no mesmo lugar: nada a fazer
+                alvo = nome_unico(self.destino, nome)
+                if self.mover:
+                    try:
+                        os.rename(origem, alvo)   # mesmo disco: instantâneo
+                        self.feito += self._tamanho(alvo)
+                        continue
+                    except OSError:
+                        pass
+                    self._copiar(origem, alvo)
+                    if not self.cancelar:
+                        shutil.rmtree(origem) if os.path.isdir(origem) and not os.path.islink(origem) else os.remove(origem)
+                else:
+                    self._copiar(origem, alvo)
+            except OSError as erro:
+                self.erros.append(f"{nome}: {erro.strerror or erro}")
+        GLib.idle_add(self.janela.operacao_terminou, self)
+
+
+class Janela(Gtk.ApplicationWindow):
+    def __init__(self, app, pasta_inicial):
+        super().__init__(application=app, title="Arquivos")
+        self.get_style_context().add_class("akkos")
+        self.set_default_size(1180, 720)
+        self.set_icon_name("system-file-manager")
+
+        self.atual = None
+        self.historico, self.futuro = [], []
+        self.mostrar_ocultos = False
+        self.area_transf = ([], False)   # (caminhos, recortar?)
+        self.monitor_pasta = None
+        self.fila_miniaturas = []
+        self.operacoes = []
+
+        self._montar_interface()
+        self._montar_atalhos()
+        self.volumes = Gio.VolumeMonitor.get()
+        for sinal in ("volume-added", "volume-removed", "mount-added", "mount-removed", "mount-changed"):
+            self.volumes.connect(sinal, lambda *_: self._atualizar_lateral())
+        self.volumes.connect("volume-added", self._automontar)
+        self._atualizar_lateral()
+        self.navegar(pasta_inicial, registrar=False)
+
+    # ================================================================ interface
+
+    def _montar_interface(self):
+        cab = Gtk.HeaderBar(show_close_button=True)
+        cab.set_title("Arquivos")
+        self.set_titlebar(cab)
+
+        nav = Gtk.Box(spacing=0)
+        nav.get_style_context().add_class("linked")
+        self.b_voltar = self._botao("go-previous-symbolic", "Voltar (Alt+←)", lambda *_: self.voltar())
+        self.b_avancar = self._botao("go-next-symbolic", "Avançar (Alt+→)", lambda *_: self.avancar())
+        self.b_subir = self._botao("go-up-symbolic", "Pasta acima (Backspace)", lambda *_: self.subir())
+        for b in (self.b_voltar, self.b_avancar, self.b_subir):
+            nav.pack_start(b, False, False, 0)
+        cab.pack_start(nav)
+
+        self.endereco = Gtk.Entry(hexpand=True)
+        self.endereco.get_style_context().add_class("akkos-campo")
+        self.endereco.set_width_chars(50)
+        self.endereco.connect("activate", self._ir_endereco)
+        cab.set_custom_title(self.endereco)
+
+        self.b_previa = Gtk.ToggleButton(tooltip_text="Pré-visualização (F9)", active=True)
+        self.b_previa.add(Gtk.Image.new_from_icon_name("view-dual-symbolic", Gtk.IconSize.BUTTON))
+        self.b_previa.connect("toggled", lambda b: self.previa_revelar.set_reveal_child(b.get_active()))
+        cab.pack_end(self.b_previa)
+
+        visao = Gtk.Box()
+        visao.get_style_context().add_class("linked")
+        self.b_grade = Gtk.RadioButton.new(None)
+        self.b_grade.set_mode(False)
+        self.b_grade.add(Gtk.Image.new_from_icon_name("view-grid-symbolic", Gtk.IconSize.BUTTON))
+        self.b_grade.set_tooltip_text("Grade (Ctrl+1)")
+        self.b_lista = Gtk.RadioButton.new_from_widget(self.b_grade)
+        self.b_lista.set_mode(False)
+        self.b_lista.add(Gtk.Image.new_from_icon_name("view-list-symbolic", Gtk.IconSize.BUTTON))
+        self.b_lista.set_tooltip_text("Lista (Ctrl+2)")
+        self.b_grade.connect("toggled", lambda b: b.get_active() and self.trocar_visao("grade"))
+        self.b_lista.connect("toggled", lambda b: b.get_active() and self.trocar_visao("lista"))
+        visao.pack_start(self.b_grade, False, False, 0)
+        visao.pack_start(self.b_lista, False, False, 0)
+        cab.pack_end(visao)
+
+        self.busca = Gtk.SearchEntry(placeholder_text="Filtrar nesta pasta (Ctrl+F)")
+        self.busca.get_style_context().add_class("akkos-campo")
+        self.busca.connect("search-changed", lambda *_: self.filtro.refilter() or self._atualizar_status())
+        cab.pack_end(self.busca)
+
+        corpo = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.add(corpo)
+        self.info_barra = Gtk.InfoBar(show_close_button=True, revealed=False)
+        self.info_barra.connect("response", lambda b, *_: b.set_revealed(False))
+        self.info_texto = Gtk.Label(xalign=0, wrap=True)
+        self.info_barra.get_content_area().add(self.info_texto)
+        corpo.pack_start(self.info_barra, False, False, 0)
+
+        painel = Gtk.Paned()
+        corpo.pack_start(painel, True, True, 0)
+
+        # --- lateral
+        lateral_rolagem = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER)
+        lateral_rolagem.set_size_request(210, -1)
+        lateral_rolagem.get_style_context().add_class("lateral")
+        self.lateral = Gtk.ListBox()
+        self.lateral.get_style_context().add_class("lateral")
+        self.lateral.connect("row-activated", self._lateral_ativada)
+        lateral_rolagem.add(self.lateral)
+        painel.pack1(lateral_rolagem, False, False)
+
+        # --- conteúdo + prévia
+        centro = Gtk.Box()
+        painel.pack2(centro, True, False)
+
+        self.modelo = Gtk.ListStore(GdkPixbuf.Pixbuf, str, str, bool, GLib.TYPE_INT64, str, str,
+                                    GLib.TYPE_INT64, str, bool)
+        self.filtro = self.modelo.filter_new()
+        self.filtro.set_visible_func(self._visivel)
+        self.ordenado = Gtk.TreeModelSort(model=self.filtro)
+        self.ordenado.set_default_sort_func(self._ordem_padrao)
+
+        self.pilha = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=120)
+
+        self.grade = Gtk.IconView(model=self.ordenado, selection_mode=Gtk.SelectionMode.MULTIPLE)
+        self.grade.set_pixbuf_column(C_ICONE)
+        self.grade.set_text_column(C_NOME)
+        self.grade.set_item_width(110)
+        self.grade.set_activate_on_single_click(False)
+        self.grade.connect("item-activated", lambda v, p: self.abrir(self._caminho_de(p)))
+        self.grade.connect("selection-changed", lambda *_: self._selecao_mudou())
+        self.grade.connect("button-press-event", self._clique_vista)
+        r = Gtk.ScrolledWindow()
+        r.add(self.grade)
+        self.pilha.add_named(r, "grade")
+
+        self.lista = Gtk.TreeView(model=self.ordenado)
+        self.lista.get_selection().set_mode(Gtk.SelectionMode.MULTIPLE)
+        col = Gtk.TreeViewColumn("Nome")
+        ri = Gtk.CellRendererPixbuf()
+        col.pack_start(ri, False)
+        col.add_attribute(ri, "pixbuf", C_ICONE)
+        rt = Gtk.CellRendererText(ellipsize=Pango.EllipsizeMode.END)
+        col.pack_start(rt, True)
+        col.add_attribute(rt, "text", C_NOME)
+        col.set_expand(True)
+        col.set_sort_column_id(C_NOME)
+        self.lista.append_column(col)
+        for titulo, coluna, ordem in (("Tamanho", C_TAM_TXT, C_TAMANHO), ("Tipo", C_TIPO, C_TIPO),
+                                      ("Modificado", C_DATA_TXT, C_DATA)):
+            c = Gtk.TreeViewColumn(titulo, Gtk.CellRendererText(), text=coluna)
+            c.set_sort_column_id(ordem)
+            c.set_resizable(True)
+            self.lista.append_column(c)
+        self.lista.connect("row-activated", lambda v, p, c: self.abrir(self._caminho_de(p)))
+        self.lista.get_selection().connect("changed", lambda *_: self._selecao_mudou())
+        self.lista.connect("button-press-event", self._clique_vista)
+        r = Gtk.ScrolledWindow()
+        r.add(self.lista)
+        self.pilha.add_named(r, "lista")
+        centro.pack_start(self.pilha, True, True, 0)
+
+        self.previa_revelar = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_LEFT,
+                                           reveal_child=True)
+        self.previa = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin=12)
+        rp = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER)
+        rp.set_size_request(300, -1)
+        rp.get_style_context().add_class("previa")
+        rp.add(self.previa)
+        self.previa_revelar.add(rp)
+        centro.pack_start(self.previa_revelar, False, False, 0)
+
+        # --- rodapé
+        rodape = Gtk.Box(spacing=10)
+        rodape.get_style_context().add_class("status")
+        self.status = Gtk.Label(xalign=0)
+        self.progresso_barra = Gtk.ProgressBar(show_text=True, no_show_all=True)
+        self.progresso_barra.set_size_request(260, -1)
+        rodape.pack_start(self.status, True, True, 0)
+        rodape.pack_end(self.progresso_barra, False, False, 0)
+        corpo.pack_end(rodape, False, False, 0)
+
+        self.pilha.set_visible_child_name("grade")
+
+    def _botao(self, icone, dica, acao):
+        b = Gtk.Button(tooltip_text=dica)
+        b.add(Gtk.Image.new_from_icon_name(icone, Gtk.IconSize.BUTTON))
+        b.connect("clicked", lambda *a: (ak.tocar("click"), acao()))
+        return b
+
+    def _montar_atalhos(self):
+        acoes = {
+            "copiar": ("<Primary>c", lambda: self.copiar(False)),
+            "recortar": ("<Primary>x", lambda: self.copiar(True)),
+            "colar": ("<Primary>v", self.colar),
+            "lixeira": ("Delete", self.mandar_lixeira),
+            "excluir": ("<Shift>Delete", self.excluir_de_vez),
+            "renomear": ("F2", self.renomear),
+            "nova-pasta": ("<Primary><Shift>n", self.nova_pasta),
+            "endereco": ("<Primary>l", lambda: (self.endereco.grab_focus(), self.endereco.select_region(0, -1))),
+            "voltar": ("<Alt>Left", self.voltar),
+            "avancar": ("<Alt>Right", self.avancar),
+            "ocultos": ("<Primary>h", self.alternar_ocultos),
+            "grade": ("<Primary>1", lambda: self.b_grade.set_active(True)),
+            "lista": ("<Primary>2", lambda: self.b_lista.set_active(True)),
+            "atualizar": ("F5", lambda: self.navegar(self.atual, registrar=False)),
+            "buscar": ("<Primary>f", lambda: self.busca.grab_focus()),
+            "previa": ("F9", lambda: self.b_previa.set_active(not self.b_previa.get_active())),
+            "selecionar-tudo": ("<Primary>a", self.selecionar_tudo),
+            "terminal": ("<Primary><Alt>t", self.abrir_terminal),
+        }
+        app = self.get_application()
+        for nome, (tecla, func) in acoes.items():
+            acao = Gio.SimpleAction.new(nome, None)
+            acao.connect("activate", lambda _a, _p, f=func: f())
+            self.add_action(acao)
+            app.set_accels_for_action(f"win.{nome}", [tecla])
+        self.connect("key-press-event", self._tecla)
+
+    def _tecla(self, _w, ev):
+        if ev.keyval == Gdk.KEY_BackSpace and not (self.endereco.has_focus() or self.busca.has_focus()):
+            self.subir()
+            return True
+        if self.endereco.has_focus() or self.busca.has_focus():
+            # nos campos de texto, Delete/Ctrl+C etc. são do campo, não dos arquivos:
+            # entrega a tecla ao campo antes que os atalhos da janela a capturem
+            if ev.keyval in (Gdk.KEY_Delete,) or (ev.state & Gdk.ModifierType.CONTROL_MASK and
+                                                  ev.keyval in (Gdk.KEY_c, Gdk.KEY_x, Gdk.KEY_v, Gdk.KEY_a)):
+                return self.propagate_key_event(ev)
+        return False
+
+    # ================================================================ lateral
+
+    def _secao(self, texto):
+        linha = Gtk.ListBoxRow(selectable=False, activatable=False)
+        r = Gtk.Label(label=texto.upper(), xalign=0)
+        r.get_style_context().add_class("titulo-secao")
+        linha.add(r)
+        return linha
+
+    def _item_lateral(self, icone, texto, alvo, ejetar=None):
+        linha = Gtk.ListBoxRow()
+        linha.alvo = alvo
+        caixa = Gtk.Box(spacing=10)
+        img = Gtk.Image.new_from_gicon(icone, Gtk.IconSize.MENU) if isinstance(icone, Gio.Icon) \
+            else Gtk.Image.new_from_icon_name(icone, Gtk.IconSize.MENU)
+        caixa.pack_start(img, False, False, 0)
+        caixa.pack_start(Gtk.Label(label=texto, xalign=0, ellipsize=Pango.EllipsizeMode.END), True, True, 0)
+        if ejetar:
+            b = Gtk.Button(relief=Gtk.ReliefStyle.NONE, tooltip_text="Remover com segurança")
+            b.add(Gtk.Image.new_from_icon_name("media-eject-symbolic", Gtk.IconSize.MENU))
+            b.connect("clicked", lambda *_: ejetar())
+            caixa.pack_end(b, False, False, 0)
+        linha.add(caixa)
+        return linha
+
+    def _atualizar_lateral(self):
+        for filho in self.lateral.get_children():
+            self.lateral.remove(filho)
+        casa = GLib.get_home_dir()
+        self.lateral.add(self._secao("Locais"))
+        self.lateral.add(self._item_lateral("user-home-symbolic", "Pasta pessoal", casa))
+        especiais = [(GLib.UserDirectory.DIRECTORY_DESKTOP, "user-desktop-symbolic", "Área de trabalho"),
+                     (GLib.UserDirectory.DIRECTORY_DOCUMENTS, "folder-documents-symbolic", "Documentos"),
+                     (GLib.UserDirectory.DIRECTORY_DOWNLOAD, "folder-download-symbolic", "Downloads"),
+                     (GLib.UserDirectory.DIRECTORY_PICTURES, "folder-pictures-symbolic", "Imagens"),
+                     (GLib.UserDirectory.DIRECTORY_MUSIC, "folder-music-symbolic", "Músicas"),
+                     (GLib.UserDirectory.DIRECTORY_VIDEOS, "folder-videos-symbolic", "Vídeos")]
+        for diretorio, icone, rotulo in especiais:
+            caminho = GLib.get_user_special_dir(diretorio)
+            if caminho and caminho != casa and os.path.isdir(caminho):
+                self.lateral.add(self._item_lateral(icone, os.path.basename(caminho) or rotulo, caminho))
+        self.lateral.add(self._item_lateral("user-trash-symbolic", "Lixeira", "trash:///"))
+        prefixos = os.path.join(GLib.get_user_data_dir(), "akkos", "wine", "prefixos")
+        if os.path.isdir(prefixos):
+            self.lateral.add(self._item_lateral("wine", "Programas Windows", prefixos))
+
+        self.lateral.add(self._secao("Dispositivos"))
+        self.lateral.add(self._item_lateral("drive-harddisk-symbolic", "Sistema (/)", "/"))
+        vistos = set()
+        for vol in self.volumes.get_volumes():
+            mount = vol.get_mount()
+            alvo = mount.get_root().get_path() if mount else ("volume", vol)
+            ejetar = (lambda v=vol: self._ejetar(v)) if (vol.can_eject() or (mount and mount.can_unmount())) else None
+            self.lateral.add(self._item_lateral(vol.get_symbolic_icon() or vol.get_icon(), vol.get_name(), alvo, ejetar))
+            if mount:
+                vistos.add(mount.get_root().get_uri())
+        for mount in self.volumes.get_mounts():
+            if mount.get_root().get_uri() in vistos or mount.is_shadowed() or mount.get_volume():
+                continue
+            caminho = mount.get_root().get_path()
+            if caminho:
+                ejetar = (lambda m=mount: self._desmontar(m)) if mount.can_unmount() else None
+                self.lateral.add(self._item_lateral(mount.get_symbolic_icon() or mount.get_icon(),
+                                                    mount.get_name(), caminho, ejetar))
+        self.lateral.show_all()
+
+    def _lateral_ativada(self, _lb, linha):
+        alvo = getattr(linha, "alvo", None)
+        ak.tocar("click")
+        if isinstance(alvo, tuple) and alvo[0] == "volume":
+            self._montar_volume(alvo[1], abrir=True)
+        elif alvo:
+            self.navegar(alvo)
+
+    def _automontar(self, _mon, volume):
+        if volume.should_automount() and volume.can_mount() and volume.get_mount() is None:
+            self._montar_volume(volume, abrir=False)
+
+    def _montar_volume(self, volume, abrir):
+        def pronto(vol, res):
+            try:
+                vol.mount_finish(res)
+            except GLib.Error as erro:
+                if "already mounted" not in erro.message.lower():
+                    self.avisar(f"Não foi possível abrir {vol.get_name()}: {erro.message}", erro=True)
+                    return
+            mount = vol.get_mount()
+            if mount and abrir:
+                self.navegar(mount.get_root().get_path())
+            self._atualizar_lateral()
+        volume.mount(Gio.MountMountFlags.NONE, Gtk.MountOperation.new(self), None, pronto)
+
+    def _ejetar(self, volume):
+        mount = volume.get_mount()
+        if self.atual and mount and mount.get_root().get_path() and \
+                self.atual.startswith(mount.get_root().get_path()):
+            self.navegar(GLib.get_home_dir())
+
+        def pronto(obj, res):
+            try:
+                (obj.eject_with_operation_finish if obj.can_eject() else obj.unmount_with_operation_finish)(res)
+                self.avisar(f"{volume.get_name()} pode ser removido com segurança.")
+                ak.tocar("notify")
+            except GLib.Error as erro:
+                self.avisar(f"Não foi possível remover {volume.get_name()}: {erro.message}", erro=True)
+            self._atualizar_lateral()
+
+        op = Gtk.MountOperation.new(self)
+        if volume.can_eject():
+            volume.eject_with_operation(Gio.MountUnmountFlags.NONE, op, None, pronto)
+        elif mount:
+            mount.unmount_with_operation(Gio.MountUnmountFlags.NONE, op, None, pronto)
+
+    def _desmontar(self, mount):
+        def pronto(m, res):
+            try:
+                m.unmount_with_operation_finish(res)
+                ak.tocar("notify")
+            except GLib.Error as erro:
+                self.avisar(f"Não foi possível desmontar: {erro.message}", erro=True)
+            self._atualizar_lateral()
+        mount.unmount_with_operation(Gio.MountUnmountFlags.NONE, Gtk.MountOperation.new(self), None, pronto)
+
+    # ================================================================ navegação
+
+    def navegar(self, alvo, registrar=True):
+        if alvo.startswith("trash:"):
+            caminho = alvo
+        else:
+            caminho = os.path.abspath(os.path.expanduser(alvo))
+            if not os.path.isdir(caminho):
+                self.avisar(f"A pasta “{alvo}” não existe ou não pode ser aberta.", erro=True)
+                return
+            if not os.access(caminho, os.R_OK | os.X_OK):
+                self.avisar(f"Sem permissão para abrir “{caminho}”.", erro=True)
+                return
+        if registrar and self.atual and self.atual != caminho:
+            self.historico.append(self.atual)
+            self.futuro.clear()
+        self.atual = caminho
+        self.busca.set_text("")
+        self.endereco.set_text("Lixeira" if caminho.startswith("trash:") else caminho)
+        self.set_title(os.path.basename(caminho) or caminho if not caminho.startswith("trash:") else "Lixeira")
+        self.carregar()
+        self.b_voltar.set_sensitive(bool(self.historico))
+        self.b_avancar.set_sensitive(bool(self.futuro))
+        self.b_subir.set_sensitive(not caminho.startswith("trash:") and caminho != "/")
+        self._vigiar_pasta()
+
+    def voltar(self):
+        if self.historico:
+            self.futuro.append(self.atual)
+            self.navegar(self.historico.pop(), registrar=False)
+
+    def avancar(self):
+        if self.futuro:
+            self.historico.append(self.atual)
+            self.navegar(self.futuro.pop(), registrar=False)
+
+    def subir(self):
+        if self.atual and not self.atual.startswith("trash:") and self.atual != "/":
+            self.navegar(os.path.dirname(self.atual))
+
+    def _ir_endereco(self, entrada):
+        texto = entrada.get_text().strip()
+        if texto.lower() in ("lixeira", "trash:", "trash:///"):
+            self.navegar("trash:///")
+        elif texto.startswith("file://"):
+            self.navegar(unquote(urlparse(texto).path))
+        elif os.path.isfile(os.path.expanduser(texto)):
+            self.navegar(os.path.dirname(os.path.expanduser(texto)))
+            self.abrir(os.path.expanduser(texto))
+        else:
+            self.navegar(texto)
+
+    def _vigiar_pasta(self):
+        if self.monitor_pasta:
+            self.monitor_pasta.cancel()
+        gfile = Gio.File.new_for_uri(self.atual) if self.atual.startswith("trash:") else Gio.File.new_for_path(self.atual)
+        try:
+            self.monitor_pasta = gfile.monitor_directory(Gio.FileMonitorFlags.WATCH_MOVES, None)
+            self.monitor_pasta.set_rate_limit(500)
+            self.monitor_pasta.connect("changed", self._pasta_mudou)
+        except GLib.Error:
+            self.monitor_pasta = None
+
+    def _pasta_mudou(self, *_):
+        if not hasattr(self, "_recarga_pendente"):
+            self._recarga_pendente = GLib.timeout_add(300, self._recarregar_preservando)
+
+    def _recarregar_preservando(self):
+        del self._recarga_pendente
+        selecionados = set(self.selecionados())
+        self.carregar()
+        self._selecionar(selecionados)
+        return False
+
+    # ================================================================ listagem
+
+    def _icone_para(self, info):
+        tema = Gtk.IconTheme.get_default()
+        gicon = info.get_icon()
+        if gicon:
+            achado = tema.lookup_by_gicon(gicon, TAM_ICONE, Gtk.IconLookupFlags.FORCE_SIZE)
+            if achado:
+                try:
+                    return achado.load_icon()
+                except GLib.Error:
+                    pass
+        return tema.load_icon("text-x-generic", TAM_ICONE, Gtk.IconLookupFlags.FORCE_SIZE)
+
+    def carregar(self):
+        self.modelo.clear()
+        self.fila_miniaturas.clear()
+        if self.atual.startswith("trash:"):
+            gpasta = Gio.File.new_for_uri(self.atual)
+        else:
+            gpasta = Gio.File.new_for_path(self.atual)
+        atributos = ",".join(["standard::*", "time::modified", "trash::orig-path"])
+        try:
+            enum = gpasta.enumerate_children(atributos, Gio.FileQueryInfoFlags.NONE, None)
+        except GLib.Error as erro:
+            self.avisar(f"Não foi possível listar a pasta: {erro.message}", erro=True)
+            return
+        for info in enum:
+            nome = info.get_display_name()
+            eh_pasta = info.get_file_type() == Gio.FileType.DIRECTORY
+            if self.atual.startswith("trash:"):
+                caminho = enum.get_child(info).get_uri()
+            else:
+                caminho = os.path.join(self.atual, info.get_name())
+            tamanho = info.get_size()
+            mod = info.get_modification_date_time()
+            ts = mod.to_unix() if mod else 0
+            tipo = Gio.content_type_get_description(info.get_content_type() or "application/octet-stream")
+            if nome.lower().endswith(EXT_WINDOWS):
+                tipo = "Programa Windows"
+            elif nome.lower().endswith(".appimage"):
+                tipo = "Aplicativo (AppImage)"
+            iter_ = self.modelo.append([self._icone_para(info), nome, caminho, eh_pasta, tamanho,
+                                       "—" if eh_pasta else ak.formatar_tamanho(tamanho), tipo, ts,
+                                       data_txt(ts) if ts else "", info.get_is_hidden() or nome.startswith(".")])
+            ctype = info.get_content_type() or ""
+            if ctype.startswith("image/") and tamanho < LIMITE_MINIATURA and not caminho.startswith("trash:"):
+                self.fila_miniaturas.append((Gtk.TreeRowReference.new(self.modelo, self.modelo.get_path(iter_)),
+                                             caminho))
+        self.ordenado.set_sort_column_id(Gtk.TREE_SORTABLE_DEFAULT_SORT_COLUMN_ID, Gtk.SortType.ASCENDING)
+        self._atualizar_status()
+        self._mostrar_previa(None)
+        if self.fila_miniaturas:
+            threading.Thread(target=self._gerar_miniaturas, args=(list(self.fila_miniaturas), self.atual),
+                             daemon=True).start()
+
+    def _gerar_miniaturas(self, fila, pasta):
+        for ref, caminho in fila:
+            if pasta != self.atual:
+                return
+            try:
+                pix = GdkPixbuf.Pixbuf.new_from_file_at_scale(caminho, TAM_MINIATURA, TAM_MINIATURA, True)
+            except GLib.Error:
+                continue
+            GLib.idle_add(self._aplicar_miniatura, ref, pix, pasta)
+
+    def _aplicar_miniatura(self, ref, pix, pasta):
+        if pasta == self.atual and ref.valid():
+            self.modelo.set_value(self.modelo.get_iter(ref.get_path()), C_ICONE, pix)
+        return False
+
+    def _visivel(self, modelo, it, _dados):
+        if modelo[it][C_OCULTO] and not self.mostrar_ocultos:
+            return False
+        termo = self.busca.get_text().strip().casefold()
+        return not termo or termo in modelo[it][C_NOME].casefold()
+
+    def _ordem_padrao(self, modelo, a, b, _dados):
+        pa, pb = modelo[a][C_EH_PASTA], modelo[b][C_EH_PASTA]
+        if pa != pb:
+            return -1 if pa else 1
+        na, nb = modelo[a][C_NOME].casefold(), modelo[b][C_NOME].casefold()
+        return (na > nb) - (na < nb)
+
+    def alternar_ocultos(self):
+        self.mostrar_ocultos = not self.mostrar_ocultos
+        self.filtro.refilter()
+        self._atualizar_status()
+
+    def trocar_visao(self, nome):
+        self.pilha.set_visible_child_name(nome)
+        ak.tocar("click")
+
+    # ================================================================ seleção
+
+    def _vista(self):
+        return self.grade if self.pilha.get_visible_child_name() == "grade" else self.lista
+
+    def _caminho_de(self, tree_path):
+        return self.ordenado[tree_path][C_CAMINHO]
+
+    def selecionados(self):
+        if self._vista() is self.grade:
+            caminhos = self.grade.get_selected_items()
+        else:
+            _, caminhos = self.lista.get_selection().get_selected_rows()
+        return [self.ordenado[p][C_CAMINHO] for p in caminhos]
+
+    def _selecionar(self, conjunto):
+        for linha in self.ordenado:
+            if linha[C_CAMINHO] in conjunto:
+                if self._vista() is self.grade:
+                    self.grade.select_path(linha.path)
+                else:
+                    self.lista.get_selection().select_path(linha.path)
+
+    def selecionar_tudo(self):
+        if self.endereco.has_focus() or self.busca.has_focus():
+            return
+        (self.grade.select_all if self._vista() is self.grade else self.lista.get_selection().select_all)()
+
+    def _selecao_mudou(self):
+        sel = self.selecionados()
+        self._mostrar_previa(sel[0] if len(sel) == 1 else None, len(sel))
+        self._atualizar_status()
+
+    def _atualizar_status(self):
+        visiveis = len(self.ordenado)
+        sel = self.selecionados() if hasattr(self, "grade") else []
+        texto = f"{visiveis} {'item' if visiveis == 1 else 'itens'}"
+        if sel:
+            soma = 0
+            for c in sel:
+                try:
+                    if not c.startswith("trash:") and os.path.isfile(c):
+                        soma += os.path.getsize(c)
+                except OSError:
+                    pass
+            texto += f" — {len(sel)} selecionado{'s' if len(sel) > 1 else ''}"
+            if soma:
+                texto += f" ({ak.formatar_tamanho(soma)})"
+        if self.atual and not self.atual.startswith("trash:"):
+            try:
+                st = os.statvfs(self.atual)
+                texto += f" — {ak.formatar_tamanho(st.f_bavail * st.f_frsize)} livres"
+            except OSError:
+                pass
+        self.status.set_text(texto)
+
+    # ================================================================ prévia
+
+    def _mostrar_previa(self, caminho, quantidade=0):
+        for filho in self.previa.get_children():
+            self.previa.remove(filho)
+        if caminho is None:
+            msg = f"{quantidade} itens selecionados" if quantidade > 1 else "Selecione um arquivo para ver detalhes"
+            r = Gtk.Label(label=msg, wrap=True)
+            r.get_style_context().add_class("akkos-muted")
+            self.previa.pack_start(r, False, False, 20)
+            self.previa.show_all()
+            return
+        gfile = Gio.File.new_for_uri(caminho) if caminho.startswith("trash:") else Gio.File.new_for_path(caminho)
+        try:
+            info = gfile.query_info("standard::*,time::modified,unix::mode,owner::user,trash::orig-path",
+                                    Gio.FileQueryInfoFlags.NONE, None)
+        except GLib.Error as erro:
+            self.previa.pack_start(Gtk.Label(label=erro.message, wrap=True), False, False, 0)
+            self.previa.show_all()
+            return
+        ctype = info.get_content_type() or ""
+        nome = info.get_display_name()
+        local = gfile.get_path()
+
+        visual = None
+        if local and ctype.startswith("image/") and info.get_size() < LIMITE_MINIATURA:
+            try:
+                visual = Gtk.Image.new_from_pixbuf(GdkPixbuf.Pixbuf.new_from_file_at_scale(local, 276, 276, True))
+            except GLib.Error:
+                visual = None
+        if visual is None and local and (ctype.startswith("text/") or nome.lower().endswith(EXT_TEXTO)) \
+                and info.get_size() < 2 * 1024 * 1024:
+            try:
+                with open(local, "r", errors="replace") as f:
+                    trecho = "".join(f.readline() for _ in range(60))
+                tv = Gtk.TextView(editable=False, cursor_visible=False, monospace=True,
+                                  wrap_mode=Gtk.WrapMode.CHAR)
+                tv.get_buffer().set_text(trecho)
+                tv.set_size_request(276, 260)
+                visual = tv
+            except OSError:
+                visual = None
+        if visual is None:
+            visual = Gtk.Image.new_from_gicon(info.get_icon() or Gio.ThemedIcon.new("text-x-generic"),
+                                              Gtk.IconSize.DIALOG)
+            visual.set_pixel_size(128)
+        self.previa.pack_start(visual, False, False, 0)
+
+        titulo = Gtk.Label(label=nome, wrap=True, xalign=0)
+        titulo.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR)
+        titulo.get_style_context().add_class("akkos-titulo")
+        self.previa.pack_start(titulo, False, False, 0)
+
+        detalhes = []
+        tipo = Gio.content_type_get_description(ctype)
+        if nome.lower().endswith(EXT_WINDOWS):
+            tipo = "Programa Windows — abre com compatibilidade (Wine)"
+        detalhes.append(("Tipo", tipo))
+        if info.get_file_type() != Gio.FileType.DIRECTORY:
+            detalhes.append(("Tamanho", f"{ak.formatar_tamanho(info.get_size())} ({info.get_size():,} bytes)".replace(",", ".")))
+        else:
+            try:
+                detalhes.append(("Conteúdo", f"{len(os.listdir(local))} itens"))
+            except (OSError, TypeError):
+                pass
+        mod = info.get_modification_date_time()
+        if mod:
+            detalhes.append(("Modificado", data_txt(mod.to_unix())))
+        modo = info.get_attribute_uint32("unix::mode")
+        if modo:
+            detalhes.append(("Permissões", stat.filemode(modo)))
+        dono = info.get_attribute_string("owner::user")
+        if dono:
+            detalhes.append(("Dono", dono))
+        origem = info.get_attribute_byte_string("trash::orig-path")
+        if origem:
+            detalhes.append(("Local original", origem))
+        if local:
+            detalhes.append(("Local", os.path.dirname(local)))
+        grade = Gtk.Grid(column_spacing=10, row_spacing=4)
+        for i, (k, v) in enumerate(detalhes):
+            rk = Gtk.Label(label=k, xalign=1, yalign=0)
+            rk.get_style_context().add_class("akkos-muted")
+            rv = Gtk.Label(label=v, xalign=0, wrap=True, selectable=True)
+            rv.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR)
+            grade.attach(rk, 0, i, 1, 1)
+            grade.attach(rv, 1, i, 1, 1)
+        self.previa.pack_start(grade, False, False, 0)
+
+        if local and nome.lower().endswith(EXT_WINDOWS):
+            b = Gtk.Button(label="Abrir com compatibilidade Windows")
+            b.get_style_context().add_class("akkos-primario")
+            b.connect("clicked", lambda *_: self.abrir(local))
+            self.previa.pack_start(b, False, False, 6)
+        self.previa.show_all()
+
+    # ================================================================ abrir
+
+    def _confirmar(self, titulo, texto, botao="Continuar", perigoso=False):
+        d = Gtk.MessageDialog(transient_for=self, modal=True, message_type=Gtk.MessageType.WARNING if perigoso
+                              else Gtk.MessageType.QUESTION, buttons=Gtk.ButtonsType.NONE, text=titulo)
+        d.format_secondary_text(texto)
+        d.add_button("Cancelar", Gtk.ResponseType.CANCEL)
+        ok = d.add_button(botao, Gtk.ResponseType.OK)
+        ok.get_style_context().add_class("destructive-action" if perigoso else "suggested-action")
+        d.set_default_response(Gtk.ResponseType.CANCEL if perigoso else Gtk.ResponseType.OK)
+        resp = d.run()
+        d.destroy()
+        return resp == Gtk.ResponseType.OK
+
+    def abrir(self, caminho):
+        if caminho.startswith("trash:"):
+            gfile = Gio.File.new_for_uri(caminho)
+            info = gfile.query_info("standard::type", Gio.FileQueryInfoFlags.NONE, None)
+            if info.get_file_type() == Gio.FileType.DIRECTORY:
+                self.navegar(caminho)
+            else:
+                self.avisar("Restaure o arquivo da lixeira (botão direito → Restaurar) para abri-lo.")
+            return
+        if os.path.isdir(caminho):
+            ak.tocar("click")
+            self.navegar(caminho)
+            return
+        nome = os.path.basename(caminho).lower()
+        if nome.endswith(EXT_WINDOWS):
+            ak.executar_destacado(["win-launcher", caminho], cwd=os.path.dirname(caminho))
+            return
+        if nome.endswith(".appimage"):
+            if self._confirmar("Executar este aplicativo?",
+                               f"“{os.path.basename(caminho)}” é um programa (AppImage). Só execute "
+                               "programas de fontes em que você confia.", "Executar"):
+                try:
+                    os.chmod(caminho, os.stat(caminho).st_mode | stat.S_IXUSR)
+                    ak.executar_destacado([caminho], cwd=os.path.dirname(caminho))
+                except OSError as erro:
+                    self.avisar(f"Não foi possível executar: {erro.strerror}", erro=True)
+            return
+        if nome.endswith(".deb"):
+            self._instalar_deb(caminho)
+            return
+        if nome.endswith(".flatpakref"):
+            if self._confirmar("Instalar aplicativo Flatpak?", os.path.basename(caminho), "Instalar"):
+                ak.executar_destacado(["xfce4-terminal", "--hold", "-T", "Instalando aplicativo",
+                                       "-x", "flatpak", "install", "--user", "-y", "--from", caminho])
+            return
+        if gfile_eh_executavel_elf(caminho):
+            if not os.access(caminho, os.X_OK):
+                if not self._confirmar("Marcar como executável?",
+                                       "Este arquivo é um programa Linux, mas não tem permissão de execução. "
+                                       "Só faça isso se confiar na origem.", "Marcar e executar"):
+                    return
+                try:
+                    os.chmod(caminho, os.stat(caminho).st_mode | stat.S_IXUSR)
+                except OSError as erro:
+                    self.avisar(f"Não foi possível alterar a permissão: {erro.strerror}", erro=True)
+                    return
+            elif not self._confirmar("Executar este programa?", os.path.basename(caminho), "Executar"):
+                return
+            ak.executar_destacado([caminho], cwd=os.path.dirname(caminho))
+            return
+        try:
+            Gio.AppInfo.launch_default_for_uri(Gio.File.new_for_path(caminho).get_uri(),
+                                               Gdk.Display.get_default().get_app_launch_context())
+        except GLib.Error:
+            self._abrir_com(caminho)
+
+    def _abrir_com(self, caminho):
+        gfile = Gio.File.new_for_path(caminho)
+        d = Gtk.AppChooserDialog.new(self, Gtk.DialogFlags.MODAL, gfile)
+        if d.run() == Gtk.ResponseType.OK and d.get_app_info():
+            try:
+                d.get_app_info().launch([gfile], None)
+            except GLib.Error as erro:
+                self.avisar(erro.message, erro=True)
+        d.destroy()
+
+    def _instalar_deb(self, caminho):
+        if not self._confirmar("Instalar pacote do sistema?",
+                               f"“{os.path.basename(caminho)}” será instalado com o apt, como administrador. "
+                               "Pacotes .deb têm acesso total ao sistema: instale só de fontes confiáveis.",
+                               "Instalar", perigoso=True):
+            return
+        ak.executar_destacado(["xfce4-terminal", "--hold", "-T", "Instalando pacote", "-x",
+                               "sudo", "apt-get", "install", "-y", os.path.abspath(caminho)])
+
+    # ================================================================ operações
+
+    def copiar(self, recortar):
+        sel = [s for s in self.selecionados() if not s.startswith("trash:")]
+        if not sel:
+            return
+        self.area_transf = (sel, recortar)
+        uris = [Gio.File.new_for_path(s).get_uri() for s in sel]
+        Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text("\n".join(sel), -1)
+        self.avisar(f"{len(sel)} {'item recortado' if recortar else 'item copiado'}"
+                    f"{'s' if len(sel) > 1 else ''} — use Ctrl+V na pasta de destino.")
+        ak.tocar("click")
+        self._uris_copiados = uris
+
+    def colar(self):
+        origens, recortar = self.area_transf
+        if not origens or not self.atual or self.atual.startswith("trash:"):
+            return
+        if not os.access(self.atual, os.W_OK):
+            self.avisar("Sem permissão de escrita nesta pasta.", erro=True)
+            return
+        op = Operacao(self, origens, self.atual, recortar)
+        try:
+            livre = os.statvfs(self.atual)
+            if not recortar and op.total > livre.f_bavail * livre.f_frsize:
+                self.avisar(f"Espaço insuficiente: precisa de {ak.formatar_tamanho(op.total)}.", erro=True)
+                return
+        except OSError:
+            pass
+        if recortar:
+            self.area_transf = ([], False)
+        self.operacoes.append(op)
+        self.progresso_barra.show()
+        self.progresso(op)
+        threading.Thread(target=op.executar, daemon=True).start()
+
+    def progresso(self, op):
+        frac = op.feito / op.total if op.total else 1.0
+        self.progresso_barra.set_fraction(min(frac, 1.0))
+        verbo = "Movendo" if op.mover else "Copiando"
+        self.progresso_barra.set_text(f"{verbo} {ak.formatar_tamanho(op.feito)} de {ak.formatar_tamanho(op.total)}")
+        return False
+
+    def operacao_terminou(self, op):
+        self.operacoes.remove(op)
+        if not self.operacoes:
+            self.progresso_barra.hide()
+        if op.erros:
+            self.avisar("Alguns itens falharam:\n" + "\n".join(op.erros[:8]), erro=True)
+        else:
+            ak.tocar("notify")
+        self.carregar()
+        return False
+
+    def mandar_lixeira(self):
+        sel = self.selecionados()
+        if not sel or self.atual.startswith("trash:"):
+            if sel:
+                self.excluir_de_vez()
+            return
+        falhas = []
+        for c in sel:
+            try:
+                Gio.File.new_for_path(c).trash(None)
+            except GLib.Error as erro:
+                falhas.append((c, erro.message))
+        if falhas:
+            # pendrives FAT muitas vezes não têm lixeira: oferece excluir de vez
+            if self._confirmar("Não foi possível mandar para a lixeira",
+                               f"{len(falhas)} item(ns) não podem ir para a lixeira neste local "
+                               f"({falhas[0][1]}). Excluir definitivamente?", "Excluir", perigoso=True):
+                self._apagar([c for c, _ in falhas])
+        else:
+            ak.tocar("click")
+        self.carregar()
+
+    def excluir_de_vez(self):
+        sel = self.selecionados()
+        if not sel:
+            return
+        nomes = ", ".join(os.path.basename(unquote(s.rstrip("/"))) for s in sel[:3]) + ("…" if len(sel) > 3 else "")
+        if self._confirmar(f"Excluir {len(sel)} item(ns) definitivamente?",
+                           f"{nomes}\n\nEssa ação não pode ser desfeita.", "Excluir", perigoso=True):
+            self._apagar(sel)
+            self.carregar()
+
+    def _apagar(self, caminhos):
+        erros = []
+        for c in caminhos:
+            try:
+                if c.startswith("trash:"):
+                    Gio.File.new_for_uri(c).delete(None)
+                elif os.path.isdir(c) and not os.path.islink(c):
+                    shutil.rmtree(c)
+                else:
+                    os.remove(c)
+            except (OSError, GLib.Error) as erro:
+                erros.append(f"{os.path.basename(c)}: {getattr(erro, 'strerror', None) or getattr(erro, 'message', erro)}")
+        if erros:
+            self.avisar("Não foi possível excluir:\n" + "\n".join(erros[:8]), erro=True)
+        else:
+            ak.tocar("click")
+
+    def restaurar(self):
+        for c in self.selecionados():
+            if not c.startswith("trash:"):
+                continue
+            gfile = Gio.File.new_for_uri(c)
+            info = gfile.query_info("trash::orig-path", Gio.FileQueryInfoFlags.NONE, None)
+            origem = info.get_attribute_byte_string("trash::orig-path")
+            if not origem:
+                continue
+            os.makedirs(os.path.dirname(origem), exist_ok=True)
+            destino = nome_unico(os.path.dirname(origem), os.path.basename(origem))
+            try:
+                gfile.move(Gio.File.new_for_path(destino), Gio.FileCopyFlags.NONE, None, None, None)
+            except GLib.Error as erro:
+                self.avisar(f"Não foi possível restaurar: {erro.message}", erro=True)
+        self.carregar()
+
+    def esvaziar_lixeira(self):
+        if not self._confirmar("Esvaziar a lixeira?", "Todos os itens serão apagados para sempre.",
+                               "Esvaziar", perigoso=True):
+            return
+        lixeira = Gio.File.new_for_uri("trash:///")
+        for info in lixeira.enumerate_children("standard::name", Gio.FileQueryInfoFlags.NONE, None):
+            try:
+                lixeira.get_child(info.get_name()).delete(None)
+            except GLib.Error:
+                pass
+        ak.tocar("notify")
+        self.carregar()
+
+    def _pedir_nome(self, titulo, inicial, botao):
+        d = Gtk.Dialog(title=titulo, transient_for=self, modal=True)
+        d.add_button("Cancelar", Gtk.ResponseType.CANCEL)
+        d.add_button(botao, Gtk.ResponseType.OK).get_style_context().add_class("suggested-action")
+        d.set_default_response(Gtk.ResponseType.OK)
+        campo = Gtk.Entry(text=inicial, activates_default=True, margin=12)
+        campo.set_width_chars(36)
+        d.get_content_area().add(campo)
+        d.show_all()
+        base, _ = os.path.splitext(inicial)
+        campo.select_region(0, len(base) if base else -1)
+        resp = d.run()
+        texto = campo.get_text().strip()
+        d.destroy()
+        if resp != Gtk.ResponseType.OK or not texto:
+            return None
+        if "/" in texto or texto in (".", ".."):
+            self.avisar("O nome não pode conter “/”.", erro=True)
+            return None
+        return texto
+
+    def renomear(self):
+        sel = self.selecionados()
+        if len(sel) != 1 or sel[0].startswith("trash:"):
+            return
+        antigo = sel[0]
+        novo_nome = self._pedir_nome("Renomear", os.path.basename(antigo), "Renomear")
+        if not novo_nome or novo_nome == os.path.basename(antigo):
+            return
+        novo = os.path.join(os.path.dirname(antigo), novo_nome)
+        if os.path.lexists(novo):
+            self.avisar(f"Já existe “{novo_nome}” nesta pasta.", erro=True)
+            return
+        try:
+            os.rename(antigo, novo)
+        except OSError as erro:
+            self.avisar(f"Não foi possível renomear: {erro.strerror}", erro=True)
+            return
+        self.carregar()
+        self._selecionar({novo})
+
+    def nova_pasta(self):
+        if not self.atual or self.atual.startswith("trash:"):
+            return
+        nome = self._pedir_nome("Nova pasta", "Nova pasta", "Criar")
+        if not nome:
+            return
+        caminho = os.path.join(self.atual, nome)
+        try:
+            os.mkdir(caminho)
+        except OSError as erro:
+            self.avisar(f"Não foi possível criar a pasta: {erro.strerror}", erro=True)
+            return
+        ak.tocar("click")
+        self.carregar()
+        self._selecionar({caminho})
+
+    def abrir_terminal(self):
+        if self.atual and not self.atual.startswith("trash:"):
+            ak.executar_destacado(["xfce4-terminal", "--working-directory", self.atual])
+
+    # ================================================================ menu de contexto
+
+    def _clique_vista(self, vista, ev):
+        if ev.type != Gdk.EventType.BUTTON_PRESS or ev.button != 3:
+            return False
+        if vista is self.grade:
+            caminho = self.grade.get_path_at_pos(int(ev.x), int(ev.y))
+            if caminho and not self.grade.path_is_selected(caminho):
+                self.grade.unselect_all()
+                self.grade.select_path(caminho)
+            elif not caminho:
+                self.grade.unselect_all()
+        else:
+            hit = self.lista.get_path_at_pos(int(ev.x), int(ev.y))
+            sel = self.lista.get_selection()
+            if hit and not sel.path_is_selected(hit[0]):
+                sel.unselect_all()
+                sel.select_path(hit[0])
+            elif not hit:
+                sel.unselect_all()
+        self._menu_contexto(ev)
+        return True
+
+    def _menu_contexto(self, ev):
+        menu = Gtk.Menu()
+        sel = self.selecionados()
+        na_lixeira = self.atual.startswith("trash:")
+
+        def item(rotulo, func, ativo=True):
+            mi = Gtk.MenuItem(label=rotulo)
+            mi.set_sensitive(ativo)
+            mi.connect("activate", lambda *_: func())
+            menu.append(mi)
+
+        def separador():
+            menu.append(Gtk.SeparatorMenuItem())
+
+        if sel and not na_lixeira:
+            alvo = sel[0]
+            item("Abrir", lambda: [self.abrir(s) for s in sel])
+            nome = os.path.basename(alvo).lower()
+            if len(sel) == 1 and nome.endswith(EXT_WINDOWS):
+                item("Abrir com compatibilidade Windows", lambda: self.abrir(alvo))
+                item("Abrir sem sandbox (menos seguro)",
+                     lambda: ak.executar_destacado(["win-launcher", "--sem-sandbox", alvo], cwd=os.path.dirname(alvo)))
+            if len(sel) == 1 and os.path.isfile(alvo):
+                item("Abrir com…", lambda: self._abrir_com(alvo))
+            separador()
+            item("Copiar", lambda: self.copiar(False))
+            item("Recortar", lambda: self.copiar(True))
+            item("Renomear…", self.renomear, len(sel) == 1)
+            separador()
+            item("Mover para a lixeira", self.mandar_lixeira)
+            item("Excluir definitivamente…", self.excluir_de_vez)
+        elif sel and na_lixeira:
+            item("Restaurar", self.restaurar)
+            item("Excluir definitivamente…", self.excluir_de_vez)
+        else:
+            if na_lixeira:
+                item("Esvaziar lixeira…", self.esvaziar_lixeira)
+            else:
+                item("Nova pasta…", self.nova_pasta)
+                item("Colar", self.colar, bool(self.area_transf[0]))
+                separador()
+                item("Abrir terminal aqui", self.abrir_terminal)
+                mi = Gtk.CheckMenuItem(label="Mostrar arquivos ocultos")
+                mi.set_active(self.mostrar_ocultos)
+                mi.connect("toggled", lambda *_: self.alternar_ocultos())
+                menu.append(mi)
+        menu.show_all()
+        menu.attach_to_widget(self, None)
+        menu.popup_at_pointer(ev)
+
+    # ================================================================ avisos
+
+    def avisar(self, texto, erro=False):
+        self.info_texto.set_text(texto)
+        self.info_barra.set_message_type(Gtk.MessageType.ERROR if erro else Gtk.MessageType.INFO)
+        self.info_barra.set_revealed(True)
+        if erro:
+            ak.tocar("error")
+        if hasattr(self, "_aviso_timer"):
+            GLib.source_remove(self._aviso_timer)
+        self._aviso_timer = GLib.timeout_add_seconds(8 if erro else 4, self._fechar_aviso)
+
+    def _fechar_aviso(self):
+        self.info_barra.set_revealed(False)
+        del self._aviso_timer
+        return False
+
+
+class Aplicativo(Gtk.Application):
+    def __init__(self):
+        super().__init__(application_id=APP_ID,
+                         flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE | Gio.ApplicationFlags.NON_UNIQUE)
+
+    def do_startup(self):
+        Gtk.Application.do_startup(self)
+        ak.aplicar_css(CSS)
+        Gtk.Settings.get_default().set_property("gtk-application-prefer-dark-theme", True)
+
+    def do_command_line(self, linha):
+        args = [a for a in linha.get_arguments()[1:] if not a.startswith("-")]
+        alvo = args[0] if args else GLib.get_home_dir()
+        if alvo.startswith("file://"):
+            alvo = unquote(urlparse(alvo).path)
+        if os.path.isfile(alvo):
+            alvo = os.path.dirname(alvo)
+        janela = Janela(self, alvo)
+        janela.show_all()
+        janela.progresso_barra.hide()
+        janela.present()
+        return 0
+
+
+if __name__ == "__main__":
+    sys.exit(Aplicativo().run(sys.argv))
