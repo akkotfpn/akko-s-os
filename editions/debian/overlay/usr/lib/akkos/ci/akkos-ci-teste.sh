@@ -178,10 +178,19 @@ check espaco_antes bash -c "df -h /home/$U | tail -1 | tr -s ' '"
 asu timeout 600 win-launcher --modo app --sem-tela "$QB" /S >/tmp/qb.log 2>&1
 check qbittorrent_instalado bash -c "ls -la '$PFX/drive_c/Program Files/qBittorrent/qbittorrent.exe' || { tail -15 /tmp/qb.log; tail -25 \$(ls -t /home/$U/.local/share/akkos/wine/logs/qbittorrent*.log | head -1); df -h /home/$U; false; }"
 check espaco_depois bash -c "df -h /home/$U | tail -1 | tr -s ' '"
-asu win-launcher --modo app "$PFX/drive_c/Program Files/qBittorrent/qbittorrent.exe" >/dev/null 2>&1 &
-for i in $(seq 1 150); do asu wmctrl -l 2>/dev/null | grep -qi 'qbittorrent' && break; sleep 1; done
+QBEXE="$PFX/drive_c/Program Files/qBittorrent/qbittorrent.exe"
+asu env WINEDEBUG=err+all,fixme-all win-launcher --modo app "$QBEXE" >/dev/null 2>&1 &
+for i in $(seq 1 120); do asu wmctrl -l 2>/dev/null | grep -qiE 'qbittorrent|aviso legal|legal notice' && break; sleep 1; done
 sleep 5
-check janela_qbittorrent bash -c "asu wmctrl -l | grep -i qbittorrent || { tail -25 \$(ls -t /home/$U/.local/share/akkos/wine/logs/qbittorrent-*.log | head -1); df -h /home/$U; free -m; false; }"
+check diag_qbittorrent_sandbox bash -c "asu wmctrl -l | tail -4; ps -u $U -o pid,stat,etime,rss,args | grep -iE 'wine|qbit|firejail' | grep -v grep | cut -c1-160 | head -12; tail -15 \$(ls -t /home/$U/.local/share/akkos/wine/logs/qbittorrent-*.log | head -1); true"
+if ! asu wmctrl -l 2>/dev/null | grep -qiE 'qbittorrent|aviso legal|legal notice'; then
+    asu bash -c "WINEPREFIX='$PFX' wineserver -k" 2>/dev/null; sleep 3
+    asu env WINEDEBUG=err+all,fixme-all win-launcher --modo app --sem-sandbox "$QBEXE" >/dev/null 2>&1 &
+    for i in $(seq 1 120); do asu wmctrl -l 2>/dev/null | grep -qiE 'qbittorrent|aviso legal|legal notice' && break; sleep 1; done
+    sleep 5
+    check diag_qbittorrent_sem_sandbox bash -c "asu wmctrl -l | tail -4; ps -u $U -o pid,stat,etime,rss,args | grep -iE 'wine|qbit' | grep -v grep | cut -c1-160 | head -12; tail -15 \$(ls -t /home/$U/.local/share/akkos/wine/logs/qbittorrent-*.log | head -1); true"
+fi
+check janela_qbittorrent bash -c "asu wmctrl -l | grep -iE 'qbittorrent|aviso legal|legal notice'"
 shot 07b-qbittorrent
 asu bash -c "WINEPREFIX='$PFX' wineserver -k" 2>/dev/null
 sleep 3
