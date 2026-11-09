@@ -17,6 +17,7 @@
 #   --iso-storage NOME onde fica a ISO (padrão: local)
 #   --ponte NOME       placa de rede (padrão: vmbr0)
 #   --bios seabios     usa BIOS clássica em vez de UEFI
+#   --som              tela e som pelo SPICE (abra o console "SPICE" no Proxmox)
 #   --nao-iniciar      só cria, não liga a VM
 #   --so-baixar        só baixa a ISO (não cria VM)
 #   --versao TAG       outra Release (padrão: debian-ultima)
@@ -26,7 +27,7 @@ REPO="akkotfpn/akko-s-os"
 TAG="debian-ultima"
 ISO_NOME="akkos-debian-amd64.iso"
 ID="" NOME="akkos" MEM=4096 CPUS=2 DISCO=32 PERSIST="" STOR="" ISOSTOR="local" PONTE="vmbr0"
-BIOS="ovmf" INICIAR=1 SO_BAIXAR=0
+BIOS="ovmf" INICIAR=1 SO_BAIXAR=0 SOM=0
 
 cor() { printf '\033[%sm%s\033[0m\n' "$1" "$2"; }
 info() { cor "1;31" "==> $*"; }
@@ -45,6 +46,7 @@ while [ $# -gt 0 ]; do
         --ponte) PONTE=$2; shift 2 ;;
         --bios) BIOS=$2; shift 2 ;;
         --nao-iniciar) INICIAR=0; shift ;;
+        --som) SOM=1; shift ;;
         --so-baixar) SO_BAIXAR=1; shift ;;
         --versao) TAG=$2; shift 2 ;;
         -h|--help) sed -n '2,25p' "$0" 2>/dev/null || true; exit 0 ;;
@@ -119,14 +121,18 @@ ARGS=(--name "$NOME" --ostype l26 --machine q35 --bios "$BIOS"
       --memory "$MEM" --balloon 0 --cores "$CPUS" --cpu host
       --scsihw virtio-scsi-single --scsi0 "$STOR:$DISCO,discard=on,iothread=1,ssd=1"
       --ide2 "$ISO_VOL,media=cdrom" --boot "order=ide2;scsi0"
-      --net0 "virtio,bridge=$PONTE" --vga std --tablet 1
+      --net0 "virtio,bridge=$PONTE" --tablet 1
       --serial0 socket --rng0 source=/dev/urandom
       --description "Akko's OS (edição Debian) $VERSAO — criado por akkos-vm.sh. Usuário do modo sem instalar: akko / senha: live")
 [ "$BIOS" = ovmf ] && ARGS+=(--efidisk0 "$STOR:1,efitype=4m,pre-enrolled-keys=0")
 [ -n "$PERSIST" ] && ARGS+=(--scsi1 "$STOR:$PERSIST,discard=on,iothread=1,ssd=1")
 qm create "$ID" "${ARGS[@]}"
-# som (aparece no console SPICE; no noVNC fica mudo)
-qm set "$ID" --audio0 device=ich9-intel-hda,driver=spice >/dev/null 2>&1 || true
+# som: o Proxmox só tem áudio pelo SPICE, que exige a tela SPICE (qxl)
+if [ "$SOM" = 1 ]; then
+    qm set "$ID" --vga qxl --audio0 device=ich9-intel-hda,driver=spice >/dev/null
+else
+    qm set "$ID" --vga std >/dev/null
+fi
 
 if [ "$INICIAR" = 1 ]; then
     info "Ligando a VM $ID"
@@ -136,7 +142,7 @@ fi
 cat <<FIM
 
 $(cor "1;31" "Pronto! VM $ID — $NOME")
-  Abra o console no Proxmox: VM $ID → Console (noVNC ou SPICE para ter som).
+  Abra o console no Proxmox: VM $ID → Console$( [ "$SOM" = 1 ] && echo " → SPICE (precisa do virt-viewer; tem som)" || echo " (noVNC; para ter som, crie com --som)").
   No menu de boot:
     • "Usar o Akko's OS sem instalar"             — experimenta na hora
     • "Instalar o Akko's OS no computador"        — instala no disco de ${DISCO} GB
