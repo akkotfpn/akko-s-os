@@ -9,7 +9,11 @@ feh --no-fehbg --bg-fill "$PAPEL" &
 dunst &                                      # notificações (com som, ver dunstrc)
 lxpolkit &                                   # pede senha quando algo precisa de administrador
 akko-painel &                                # barra de tarefas
+akko-desktop &                               # área de trabalho com ícones (desenha o papel de parede)
 xcape -e 'Super_L=Super_L|space' &           # tocar a tecla Super sozinha abre o menu
+
+# boot pela opção "Instalar o Akko's OS": abre o instalador
+grep -q 'akkos.instalar=1' /proc/cmdline && ( sleep 4; akko-instalar ) &
 
 # prepara a compatibilidade Windows em segundo plano (só na primeira vez)
 ( sleep 20; win-launcher primeiro-uso ) &

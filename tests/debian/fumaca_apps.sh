@@ -23,7 +23,7 @@ apt-get install -y -qq --no-install-recommends \
     python3 python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-wnck-3.0 gir1.2-nm-1.0 \
     xvfb xauth openbox x11-utils wmctrl xdotool imagemagick dbus-x11 dbus \
     adwaita-icon-theme papirus-icon-theme fonts-inter fonts-dejavu-core \
-    zenity libnotify-bin wireplumber pipewire-bin >/dev/null || exit 1
+    zenity libnotify-bin wireplumber pipewire-bin python3-psutil pciutils util-linux >/dev/null || exit 1
 
 echo "== instalando os programas do Akko's OS"
 cp -r "$OV/usr/lib/akkos" /usr/lib/
@@ -75,8 +75,15 @@ abrir() {   # abrir NOME PADRAO_JANELA comando...
 }
 
 abrir painel        "Painel"                   /usr/lib/akkos/akko-painel
-ACOES="Down Down ctrl+2 Down ctrl+h ctrl+1" abrir arquivos "Documentos" /usr/lib/akkos/akko-arquivos "$HOME/Documentos"
+abrir desktop       "Área de Trabalho"         /usr/lib/akkos/akko-desktop
+ACOES="Down Down ctrl+3 Down ctrl+h ctrl+2 ctrl+1 ctrl+shift+n Return" abrir arquivos "Documentos" /usr/lib/akkos/akko-arquivos "$HOME/Documentos"
+if [ -d "$HOME/Documentos/Nova pasta" ]; then echo "OK     nova pasta criada pelo Arquivos (Ctrl+Shift+N)"
+else echo "FALHOU nova-pasta: Ctrl+Shift+N não criou 'Nova pasta'"; ls -la "$HOME/Documentos"; falhas=$((falhas + 1)); fi
+abrir arquivos-pc   "Este Computador"          /usr/lib/akkos/akko-arquivos computador://
 abrir arquivos-home "akko"                     /usr/lib/akkos/akko-arquivos
+ACOES="ctrl+f" abrir tarefas "Gerenciador de Tarefas" /usr/lib/akkos/akko-tarefas
+abrir tarefas-desempenho "Gerenciador de Tarefas" /usr/lib/akkos/akko-tarefas --desempenho
+abrir persistencia  "Guardar alterações"       /usr/lib/akkos/akko-persistencia
 abrir rede          "Rede"                     /usr/lib/akkos/akko-rede
 abrir escolha       "Abrir programa Windows"   /usr/lib/akkos/akko-win-escolha jogo.exe jogo
 abrir splash        "jogo.exe"                 /usr/lib/akkos/akko-win-splash jogo.exe "Preparando…"

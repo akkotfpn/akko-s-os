@@ -1,0 +1,39 @@
+# Akko's OS — identidade do instalador (Calamares)
+---
+componentName:  akkos
+
+welcomeStyleCalamares:   true
+welcomeExpandingLogo:    true
+windowExpanding:         normal
+windowSize:              960px,640px
+windowPlacement:         center
+
+strings:
+    productName:         "Akko's OS"
+    shortProductName:    "Akko's OS"
+    version:             "13"
+    shortVersion:        "13"
+    versionedName:       "Akko's OS"
+    shortVersionedName:  "Akko's OS"
+    bootloaderEntryName: "Akko's OS"
+    productUrl:          https://github.com/akkotfpn/akko-s-os
+    supportUrl:          https://github.com/akkotfpn/akko-s-os/issues
+    knownIssuesUrl:      https://github.com/akkotfpn/akko-s-os/blob/main/docs/TESTES.md
+    releaseNotesUrl:     https://github.com/akkotfpn/akko-s-os/blob/main/editions/debian/README.md
+
+sidebar: widget
+navigation: widget
+
+images:
+    productLogo:         "akkos-logo.png"
+    productIcon:         "akkos-logo.png"
+    productWelcome:      "welcome.png"
+
+slideshow:               "show.qml"
+slideshowAPI:            2
+
+style:
+   SidebarBackground:        "#1C1115"
+   SidebarText:              "#F5E9EB"
+   SidebarTextCurrent:       "#FFFFFF"
+   SidebarBackgroundCurrent: "#E0243B"

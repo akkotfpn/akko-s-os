@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Instalar o Akko's OS
+GenericName=Instalador do sistema
+Comment=Instala o Akko's OS no disco deste computador
+Exec=akko-instalar
+TryExec=calamares
+Icon=akkos-logo
+Terminal=false
+Categories=System;
+Keywords=instalar;instalador;disco;calamares;

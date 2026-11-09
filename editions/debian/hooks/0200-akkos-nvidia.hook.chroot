@@ -1,0 +1,32 @@
+#!/bin/sh
+# Akko's OS — driver proprietário da NVIDIA (550, GTX 750 até RTX 40),
+# compilado aqui (DKMS) para o kernel da ISO, com bibliotecas 32 bits para
+# Wine/Proton. Placas sem suporte no 550 (GTX 600/700 Kepler, RTX 50) e o
+# Secure Boot (módulo não assinado) caem no nouveau: veja akkos-gpu.
+set -e
+export DEBIAN_FRONTEND=noninteractive
+KVER=$(ls /lib/modules | sort -V | tail -1)
+echo "[akkos] NVIDIA para o kernel $KVER"
+apt-get install -y "linux-headers-$KVER" nvidia-kernel-dkms nvidia-driver firmware-nvidia-gsp \
+    nvidia-vulkan-icd nvidia-settings nvidia-smi
+apt-get install -y nvidia-driver-libs:i386 nvidia-vulkan-icd:i386 || \
+    echo "[akkos] AVISO: bibliotecas NVIDIA 32 bits não instalaram"
+dkms autoinstall -k "$KVER" || true
+if ! modinfo -k "$KVER" nvidia-current >/dev/null 2>&1 && ! modinfo -k "$KVER" nvidia >/dev/null 2>&1; then
+    echo "[akkos] ERRO: o módulo NVIDIA não foi compilado para $KVER"
+    dkms status
+    tail -40 /var/lib/dkms/nvidia-current/*/build/make.log 2>/dev/null
+    exit 1
+fi
+echo "[akkos] módulo NVIDIA: $(modinfo -k "$KVER" -F version nvidia-current 2>/dev/null || modinfo -k "$KVER" -F version nvidia)"
+dkms status
+# nouveau nunca carrega sozinho (senão disputaria a placa com o nvidia);
+# o akkos-gpu carrega o nouveau quando o nvidia não serve para a placa
+cat > /etc/modprobe.d/akkos-gpu.conf <<'CONF'
+# Akko's OS: o serviço akkos-gpu escolhe entre nvidia e nouveau no boot
+blacklist nouveau
+options nvidia-drm modeset=1 fbdev=1
+options nvidia NVreg_PreserveVideoMemoryAllocations=1
+CONF
+systemctl enable akkos-gpu.service
+apt-get clean

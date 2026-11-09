@@ -1,0 +1,14 @@
+#!/bin/sh
+# Akko's OS — habilita o trixie-backports (prioridade baixa: só o que pedirmos
+# explicitamente com -t trixie-backports vem de lá). Usado para Mesa e
+# firmwares mais novos (placas de vídeo e Wi-Fi recentes).
+set -e
+echo "[akkos] trixie-backports"
+cat > /etc/apt/sources.list.d/akkos-backports.sources <<'SRC'
+Types: deb
+URIs: http://deb.debian.org/debian
+Suites: trixie-backports
+Components: main contrib non-free non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+SRC
+apt-get update

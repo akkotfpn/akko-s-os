@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Gerenciador de Tarefas
+GenericName=Processos e desempenho
+Comment=Veja processos, desempenho (CPU, memória, disco, rede, GPU) e finalize programas travados
+Exec=akko-tarefas
+Icon=utilities-system-monitor
+Terminal=false
+Categories=System;Monitor;
+Keywords=processos;tarefas;cpu;memória;gpu;desempenho;finalizar;travado;

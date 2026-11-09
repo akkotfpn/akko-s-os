@@ -17,10 +17,10 @@ EVENTOS = ("boot_chime", "shutdown", "notify", "error", "click", "window_open")
 
 _PALETA_ARQ = "/usr/share/akkos/palette.json"
 _PALETA_PADRAO = {
-    "brand": {"cyan": "#22D3EE", "indigo": "#6366F1", "magenta": "#D946EF"},
-    "dark": {"background": "#0B1020", "surface": "#141A2E", "surface_alt": "#1C2440",
-             "text": "#E6E9F2", "text_muted": "#8B93AD"},
-    "status": {"success": "#22C55E", "warning": "#F59E0B", "error": "#EF4444", "info": "#38BDF8"},
+    "brand": {"cyan": "#FF7A59", "indigo": "#E0243B", "magenta": "#9F1239"},
+    "dark": {"background": "#120A0D", "surface": "#1C1115", "surface_alt": "#2B171E",
+             "text": "#F5E9EB", "text_muted": "#B3959C"},
+    "status": {"success": "#22C55E", "warning": "#F59E0B", "error": "#EF4444", "info": "#FB923C"},
 }
 
 

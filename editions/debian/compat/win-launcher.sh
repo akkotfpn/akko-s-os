@@ -191,8 +191,36 @@ explicar_falha() {   # lê o log e traduz os erros mais comuns
         dica+="• O programa usa driver de kernel do Windows/anti-cheat: não roda no Linux.\n"
     grep -qiE "seccomp|firejail|Permission denied" "$log" && \
         dica+="• A sandbox bloqueou algo: tente 'Abrir sem sandbox' no menu do Arquivos.\n"
+    grep -qiE "No space left|ENOSPC|disk full|erro ao gravar|error writing" "$log" && \
+        dica="• Faltou espaço. $(texto_espaco)\n$dica"
     [ -z "$dica" ] && dica="• Não identifiquei a causa automaticamente.\n"
     printf "%b" "$dica"
+}
+
+# Rodando sem instalar (live), o que se grava fica na memória RAM: pouco espaço.
+eh_live_sem_persistencia() {
+    [ -d /run/live/medium ] && ! grep -q " /run/live/persistence/" /proc/mounts
+}
+
+texto_espaco() {
+    local livre
+    livre=$(df -Pk "$HOME" 2>/dev/null | awk 'NR==2{print int($4/1024)}')
+    if eh_live_sem_persistencia; then
+        echo "Rodando sem instalar, tudo é guardado na memória RAM e restam ${livre:-?} MB. Instale o Akko's OS (ícone na área de trabalho) ou use “Guardar alterações” num disco."
+    else
+        echo "Restam ${livre:-?} MB livres na sua pasta pessoal."
+    fi
+}
+
+avisar_espaco() {
+    local livre
+    livre=$(df -Pk "$HOME" 2>/dev/null | awk 'NR==2{print $4}')
+    [ -n "$livre" ] || return 0
+    if [ "$livre" -lt 1500000 ] || { eh_live_sem_persistencia && [ "$livre" -lt 3000000 ]; }; then
+        tem_tela && command -v notify-send >/dev/null && \
+            notify-send -a "Akko's OS" -i dialog-warning "Pouco espaço para programas Windows" "$(texto_espaco)"
+        echo "aviso: pouco espaço ($((livre / 1024)) MB)" >&2
+    fi
 }
 
 # ---------------------------------------------------------------- abrir
@@ -251,6 +279,7 @@ abrir() {
             modo=app
         fi
     fi
+    avisar_espaco
     if [ "$modo" = jogo ]; then
         abrir_jogo "$arquivo" "$prefixo" "$tela" "$@"
         return $?

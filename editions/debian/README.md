@@ -22,7 +22,9 @@ editions/debian/
 ├── build_os.sh                 construtor da ISO (live-build)
 ├── pacotes.list.chroot         pacotes do sistema
 ├── hooks/
-│   ├── 0100-akkos-wine32.hook.chroot   multiarch i386 (Wine 32 bits, DXVK 32)
+│   ├── 0050-akkos-backports.hook.chroot  trixie-backports (Mesa e firmwares novos)
+│   ├── 0100-akkos-wine32.hook.chroot   multiarch i386, Mesa 26 (64+32 bits), firmwares
+│   ├── 0200-akkos-nvidia.hook.chroot   driver NVIDIA 550 compilado (DKMS) + 32 bits
 │   └── 0500-akkos-sistema.hook.chroot  identidade, serviços, Plymouth, Flathub, segurança
 ├── audio/gerar_sons.py         sintetizador da identidade sonora (numpy)
 ├── boot/
@@ -34,7 +36,11 @@ editions/debian/
 └── overlay/                    arquivos copiados para o sistema (caminhos reais)
     ├── usr/lib/akkos/
     │   ├── akko-painel         barra de tarefas (menu, janelas, rede, volume, relógio, energia)
-    │   ├── akko-arquivos       explorador de arquivos
+    │   ├── akko-desktop        área de trabalho (papel de parede + ícones)
+    │   ├── akko-arquivos       Explorador de Arquivos (estilo Windows)
+    │   ├── akko-tarefas        Gerenciador de Tarefas
+    │   ├── akko-persistencia   "Guardar alterações" no modo sem instalar
+    │   ├── akkos-gpu           escolhe nvidia ou nouveau no boot
     │   ├── akko-rede           conexões Wi-Fi/cabo (libnm)
     │   ├── akko-soundd         serviço de sons do sistema
     │   ├── akko-win-splash     tela de carregamento de programas Windows
@@ -77,18 +83,65 @@ editions/debian/
 | Super+↑ / Super+↓ | Maximizar / minimizar |
 | Super+← / Super+→ | Janela na metade esquerda/direita |
 | Print / Shift+Print | Captura da tela / da janela (~/Imagens/Capturas) |
-| Ctrl+Shift+Esc | Processos (htop) |
+| Ctrl+Shift+Esc, Ctrl+Alt+Del | Gerenciador de Tarefas |
 | Teclas de volume | Volume (PipeWire) |
 
 - **akko-painel**: menu com busca e categorias (inclui a categoria "Windows"
   com os atalhos que os instaladores criam), lista de janelas, rede, volume,
   relógio/calendário, energia; monta pendrives sozinho.
-- **akko-arquivos**: grade/lista, endereço, voltar/avançar/subir, filtro,
-  copiar/recortar/colar em segundo plano com progresso, lixeira e exclusão
-  definitiva, renomear, nova pasta, pré-visualização (imagem, texto,
-  detalhes), pendrives com montagem automática e ejeção (udisks2), e duplo
-  clique que executa `.exe/.msi` (Wine), `.AppImage`, binários ELF, `.deb` e
-  `.flatpakref` (sempre com confirmação para o que pode alterar o sistema).
+- **akko-desktop** (área de trabalho): papel de parede e ícones como no
+  Windows (Este Computador, Lixeira, "Instalar o Akko's OS" no modo live,
+  Navegador, Gerenciador de Tarefas, Terminal) + tudo da pasta Área de
+  Trabalho; botão direito → Novo ▸ Pasta / Documento de texto, Colar,
+  Exibir, Classificar, Papel de parede…; F2, Delete, arrastar e soltar.
+- **akko-arquivos** (Explorador de Arquivos, estilo Windows): "Este
+  Computador" com **Disco Local (C:)** e pendrives/discos como **D:, E:…**
+  (barra de uso, ejetar), endereço em migalhas que aceita `C:\Usuários\akko`,
+  barra de comandos **Novo ▾** (a pasta nasce com o nome selecionado para
+  digitar, como no Windows), Recortar/Copiar/Colar/Renomear/Excluir,
+  Classificar ▾, Exibir ▾ (ícones grandes/médios, detalhes, painel de
+  visualização, ocultos), Acesso rápido com pastas fixáveis, busca em
+  subpastas (Enter), arrastar e soltar (mesmo disco move, entre discos copia),
+  Propriedades, atalhos do Windows (F2, Ctrl+Shift+N, Alt+↑, Alt+Enter…), e
+  duplo clique que executa `.exe/.msi`, `.AppImage`, ELF, `.deb`, `.flatpakref`.
+- **akko-tarefas** (Gerenciador de Tarefas, Ctrl+Shift+Esc ou Ctrl+Alt+Del):
+  Processos (aplicativos × segundo plano × sistema, CPU/memória/disco com cor
+  de intensidade, Finalizar tarefa), Desempenho (gráficos ao vivo de CPU e
+  cada núcleo, memória, discos, rede, **GPU** AMD/Intel/NVIDIA com uso, VRAM e
+  temperatura quando o driver informa), Aplicativos de inicialização,
+  Detalhes (prioridade, finalizar árvore) e Serviços.
+
+### Usar sem instalar, guardar alterações ou instalar
+O menu de boot oferece:
+- **Usar o Akko's OS sem instalar** — tudo funciona, mas o que você grava fica
+  na memória RAM e some ao desligar (com 4 GB de RAM, ~2 GB livres; a swap
+  comprimida em RAM, zram, ajuda). Programas Windows grandes podem não caber:
+  o win-launcher avisa quando o espaço está curto.
+- **Usar sem instalar, guardando as alterações** — usa um disco preparado
+  pela ferramenta **Guardar alterações** (partição `akkos-dados`): arquivos,
+  programas (inclusive Windows), Wi-Fi e configurações ficam salvos.
+- **Instalar o Akko's OS no computador** — abre o instalador (**Calamares**
+  com a marca do Akko's OS): idioma, teclado, fuso, disco (apagar tudo, ao
+  lado de outro sistema ou manual, com criptografia opcional), usuário e
+  senha; instala o GRUB em BIOS ou UEFI. O instalador também está no ícone da
+  área de trabalho e no menu. O sistema instalado não leva o instalador.
+- Modo de vídeo seguro (`nomodeset`) e carregar tudo na memória (`toram`).
+
+Se a máquina não tiver modo gráfico no GRUB, o menu cai em modo texto com os
+textos sem acento (em vez de "?").
+
+### Placas de vídeo
+- **AMD e Intel (inclusive Arc)**: Mesa **26.1** (backports) em 64 e 32 bits
+  — OpenGL, Vulkan (RADV/ANV) e decodificação de vídeo (VA-API) — com
+  firmwares de 2026.
+- **NVIDIA GTX 750 até RTX 40**: driver proprietário **550** já compilado na
+  ISO (DKMS), com Vulkan e bibliotecas 32 bits para Wine/Proton.
+- **NVIDIA sem suporte no 550** (GTX 600/700, RTX 50) **ou com Secure Boot**
+  (módulo não assinado): o serviço `akkos-gpu` carrega o **nouveau**
+  automaticamente. Forçar: `akkos.gpu=nvidia` ou `akkos.gpu=nouveau` no boot.
+- Kernel **6.12 LTS** do Debian 13. Limite: o kernel 7.x dos backports não
+  compila o driver NVIDIA 550, e placas lançadas depois do 6.12 (ex.: AMD RX
+  9000) podem precisar de kernel mais novo.
 
 ### C. Áudio
 - **PipeWire + WirePlumber** com quantum de 256 amostras a 48 kHz (~5 ms),

@@ -13,7 +13,7 @@
   "BrowserSignin": 0,
   "PromotionsEnabled": false,
   "DefaultBrowserSettingEnabled": false,
-  "BrowserThemeColor": "#0B1020",
+  "BrowserThemeColor": "#120A0D",
   "ManagedBookmarks": [
     {"toplevel_name": "Akko's OS"},
     {"name": "Início", "url": "file:///usr/share/akkos/inicio/index.html"},

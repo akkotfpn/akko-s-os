@@ -1,12 +1,30 @@
 #!/bin/sh
-# Akko's OS — suporte a programas Windows de 32 bits (multiarch i386).
-# Muitos instaladores .exe ainda são 32 bits; o Wine precisa das bibliotecas i386.
+# Akko's OS — multiarch i386 (Wine 32 bits, jogos 32 bits) e drivers de vídeo
+# abertos atualizados: Mesa (AMD radeonsi/RADV, Intel iris/ANV/Arc, nouveau/NVK)
+# e firmwares das placas, vindos do trixie-backports, em 64 e 32 bits.
 set -e
+export DEBIAN_FRONTEND=noninteractive
 echo "[akkos] habilitando arquitetura i386 para o Wine 32 bits"
 dpkg --add-architecture i386
 apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y \
+apt-get install -y \
     wine32:i386 dxvk-wine32:i386 \
-    libgl1-mesa-dri:i386 mesa-vulkan-drivers:i386 libvulkan1:i386
-apt-get clean
+    libgl1-mesa-dri:i386 mesa-vulkan-drivers:i386 libvulkan1:i386 libglx-mesa0:i386
 dpkg -l 'wine32:i386' 'dxvk-wine32:i386' | tail -2
+
+echo "[akkos] Mesa do trixie-backports (64 e 32 bits juntos, mesma versão)"
+MESA=$(dpkg-query -W -f '${Package}:${Architecture}\n' | \
+       grep -E '^(mesa-|libgl1-mesa-dri|libglx-mesa0|libegl-mesa0|libgbm1|mesa-libgallium|libosmesa6|libxatracker2)' | \
+       grep -v -- '-utils' | sort -u | tr '\n' ' ')
+echo "  pacotes: $MESA"
+if apt-get install -y -t trixie-backports $MESA mesa-va-drivers; then
+    echo "[akkos] Mesa atualizado: $(dpkg-query -W -f '${Version}' mesa-vulkan-drivers:amd64)"
+else
+    echo "[akkos] AVISO: Mesa do backports não instalou; ficando com $(dpkg-query -W -f '${Version}' mesa-vulkan-drivers:amd64)"
+fi
+
+echo "[akkos] firmwares do trixie-backports (GPUs e Wi-Fi recentes)"
+apt-get install -y -t trixie-backports firmware-amd-graphics firmware-intel-graphics firmware-misc-nonfree \
+    firmware-iwlwifi firmware-realtek firmware-atheros firmware-brcm80211 firmware-nvidia-gsp \
+    || echo "[akkos] AVISO: firmwares do backports falharam (ficando com os do trixie)"
+apt-get clean

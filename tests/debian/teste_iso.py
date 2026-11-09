@@ -150,7 +150,7 @@ def extrair_da_iso(iso, destino):
         return alvo
 
     grub = open(extrair("/boot/grub/grub.cfg", "grub.cfg")).read()
-    m = re.search(r'menuentry "Iniciar o Akko\'s OS".*?\n\s*linux\s+(\S+)\s+(.*?)\n\s*initrd\s+(\S+)', grub, re.S)
+    m = re.search(r'menuentry "\$\{t_usar\}".*?\n\s*linux\s+(\S+)\s+(.*?)\n\s*initrd\s+(\S+)', grub, re.S)
     if not m:
         raise RuntimeError("entrada principal não encontrada no grub.cfg da ISO:\n" + grub[:1500])
     kernel, append, initrd = m.group(1), m.group(2).strip(), m.group(3)
@@ -205,7 +205,7 @@ def boot_funcional(iso, saida, resultado):
     _, _, append, grub = extrair_da_iso(iso, os.path.join(saida, ".iso"))
     resultado["grub_cfg_entradas"] = re.findall(r'menuentry "([^"]+)"', grub)
     extra = "akkos.teste=1 console=tty0 console=ttyS0,115200"
-    m = re.search(r'(menuentry "Iniciar o Akko\'s OS".*?\n\s*linux\s+[^\n]*)', grub, re.S)
+    m = re.search(r'(menuentry "\$\{t_usar\}".*?\n\s*linux\s+[^\n]*)', grub, re.S)
     grub_teste = grub[:m.end()] + " " + extra + grub[m.end():]
     cfg = os.path.join(saida, ".iso", "grub-teste.cfg")
     open(cfg, "w").write(grub_teste)
@@ -220,7 +220,7 @@ def boot_funcional(iso, saida, resultado):
     vars_ = os.path.join(saida, ".vars-funcional.fd")
     shutil.copy(OVMF_VARS, vars_)
     vm = VM("funcional", saida, [
-        "-machine", "q35", *KVM, "-smp", "4", "-m", "6144",
+        "-machine", "q35", *KVM, "-smp", "4", "-m", "4096",
         "-drive", f"if=pflash,format=raw,readonly=on,file={OVMF_CODE}",
         "-drive", f"if=pflash,format=raw,file={vars_}",
         "-drive", f"file={iso_teste},media=cdrom,readonly=on", "-boot", "d",
@@ -314,7 +314,9 @@ def main():
     obrigatorias = ["os_release_nome", "sessao", "sons_gerados", "pipewire", "som_notify", "rede_nm",
                     "internet_tls", "firewall_ativo", "firewall_local_responde", "firewall_bloqueia_de_fora",
                     "sysctl", "apparmor", "binfmt_exe", "janela_arquivos", "janela_rede", "janela_navegador",
-                    "wine_prefixo", "janela_windows", "umu_launcher", "janela_escolha", "audio_gravado"]
+                    "wine_prefixo", "janela_windows", "umu_launcher", "janela_escolha", "area_de_trabalho", "janela_este_computador",
+                    "janela_tarefas", "janela_instalador", "janela_persistencia", "gpu_nvidia_modulo", "zram",
+                    "qbittorrent_instalado", "audio_gravado"]
     faltando = [c for c in obrigatorias if c not in resultado["verificacoes"]]
     resultado["faltando"] = faltando
     resultado["sucesso"] = (not faltando and all(v["ok"] for v in resultado["etapas"].values())

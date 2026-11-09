@@ -1,0 +1,54 @@
+#!/bin/sh
+# akkos-gpu — garante driver de vídeo acelerado em placas NVIDIA.
+#
+# O driver proprietário (nvidia 550) é o melhor para GTX 750 até RTX 40. Ele
+# não serve para placas mais antigas (GTX 600/700 Kepler) nem mais novas
+# (RTX 50), e não carrega com Secure Boot (módulo não assinado). Nesses
+# casos este script carrega o nouveau (aberto, assinado) para a tela não
+# ficar sem aceleração. Escolha manual na linha do kernel:
+#   akkos.gpu=nvidia   ou   akkos.gpu=nouveau
+# Resultado em: journalctl -u akkos-gpu  e  /run/akkos-gpu
+
+escolha=auto
+for p in $(cat /proc/cmdline); do
+    case "$p" in akkos.gpu=*) escolha=${p#akkos.gpu=} ;; esac
+done
+
+nvidias=""
+for d in /sys/bus/pci/devices/*; do
+    [ "$(cat "$d/vendor" 2>/dev/null)" = 0x10de ] || continue
+    case "$(cat "$d/class" 2>/dev/null)" in 0x03*) nvidias="$nvidias $d" ;; esac
+done
+if [ -z "$nvidias" ]; then
+    echo "nenhuma placa NVIDIA" | tee /run/akkos-gpu
+    exit 0
+fi
+
+driver_de() { basename "$(readlink -f "$1/driver" 2>/dev/null)" 2>/dev/null; }
+udevadm settle --timeout=15 2>/dev/null
+
+if [ "$escolha" != nouveau ]; then
+    for d in $nvidias; do
+        [ -e "$d/driver" ] && continue
+        modprobe nvidia-drm 2>/tmp/akkos-gpu-erro || modprobe nvidia 2>>/tmp/akkos-gpu-erro || true
+        break
+    done
+    sleep 1
+fi
+
+for d in $nvidias; do
+    atual=$(driver_de "$d")
+    if [ -n "$atual" ] && [ "$atual" != "" ] && [ "$escolha" != nouveau ]; then
+        echo "$(basename "$d"): $atual" | tee -a /run/akkos-gpu
+        continue
+    fi
+    motivo=$(head -c 300 /tmp/akkos-gpu-erro 2>/dev/null)
+    [ "$escolha" = nouveau ] && motivo="escolhido na linha do kernel"
+    modprobe -r nvidia-drm nvidia-modeset nvidia-uvm nvidia 2>/dev/null
+    if modprobe nouveau; then
+        echo "$(basename "$d"): nouveau (nvidia indisponível: ${motivo:-placa sem suporte no 550})" | tee -a /run/akkos-gpu
+    else
+        echo "$(basename "$d"): sem driver acelerado" | tee -a /run/akkos-gpu
+    fi
+done
+exit 0

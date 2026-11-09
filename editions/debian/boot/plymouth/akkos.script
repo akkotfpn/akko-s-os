@@ -2,7 +2,7 @@
 # Logo e nome aparecem suavemente; cinco pontos ciano "respiram" em onda.
 # Também desenha o pedido de senha (disco criptografado) e mensagens.
 
-Window.SetBackgroundTopColor(0.043, 0.063, 0.125);      # #0B1020
+Window.SetBackgroundTopColor(0.043, 0.063, 0.125);      # #120A0D
 Window.SetBackgroundBottomColor(0.031, 0.043, 0.090);
 
 largura = Window.GetWidth();

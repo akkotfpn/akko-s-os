@@ -81,7 +81,7 @@ asu bash -c "akko-arquivos /usr/share/backgrounds/akkos >/tmp/akko-arquivos.log 
 for i in $(seq 1 15); do asu wmctrl -l 2>/dev/null | grep -q ' akkos$' && break; sleep 1; done
 check janela_arquivos bash -c "asu wmctrl -l | grep ' akkos$' || { tail -20 /tmp/akko-arquivos.log; false; }"
 shot 02-explorador
-asu xdotool key ctrl+2 2>/dev/null; sleep 2
+asu xdotool key ctrl+3 2>/dev/null; sleep 2
 shot 03-explorador-lista
 asu wmctrl -c akkos 2>/dev/null
 
@@ -95,6 +95,44 @@ asu akko-painel --menu
 sleep 3
 shot 05-menu
 asu xdotool key Escape 2>/dev/null
+
+# ---------------------------------------------------------- área de trabalho, Este Computador, tarefas
+check area_de_trabalho bash -c "pgrep -u $U -f akko-desktop && asu wmctrl -l | grep 'Área de Trabalho'"
+check atalhos_area_de_trabalho bash -c "ls \"\$(asu xdg-user-dir DESKTOP)\""
+asu bash -c "akko-arquivos computador:// >/tmp/akko-pc.log 2>&1" &
+for i in $(seq 1 15); do asu wmctrl -l 2>/dev/null | grep -q 'Este Computador' && break; sleep 1; done
+check janela_este_computador bash -c "asu wmctrl -l | grep 'Este Computador' || { tail -20 /tmp/akko-pc.log; false; }"
+shot 05b-este-computador
+asu wmctrl -c 'Este Computador' 2>/dev/null
+asu bash -c "akko-tarefas --desempenho >/tmp/akko-tarefas.log 2>&1" &
+for i in $(seq 1 15); do asu wmctrl -l 2>/dev/null | grep -q 'Gerenciador de Tarefas' && break; sleep 1; done
+sleep 4
+check janela_tarefas bash -c "asu wmctrl -l | grep 'Gerenciador de Tarefas' || { tail -20 /tmp/akko-tarefas.log; false; }"
+shot 05c-gerenciador-de-tarefas
+asu wmctrl -c 'Gerenciador de Tarefas' 2>/dev/null
+
+# ---------------------------------------------------------- instalador e persistência
+check calamares_marca bash -c "grep '^branding:' /etc/calamares/settings.conf && grep -c \"'calamares'\" /etc/calamares/modules/packages.conf"
+asu bash -c "akko-instalar >/tmp/akko-instalar.log 2>&1" &
+for i in $(seq 1 40); do asu wmctrl -lx 2>/dev/null | grep -qi calamares && break; sleep 1; done
+sleep 5
+check janela_instalador bash -c "asu wmctrl -lx | grep -i calamares || { tail -20 /tmp/akko-instalar.log; false; }"
+shot 05d-instalador
+pkill -x calamares 2>/dev/null; sleep 2
+asu bash -c "akko-persistencia >/tmp/akko-persist.log 2>&1" &
+for i in $(seq 1 15); do asu wmctrl -l 2>/dev/null | grep -q 'Guardar alterações' && break; sleep 1; done
+check janela_persistencia bash -c "asu wmctrl -l | grep 'Guardar alterações' || { tail -20 /tmp/akko-persist.log; false; }"
+shot 05e-guardar-alteracoes
+asu wmctrl -c 'Guardar alterações' 2>/dev/null
+
+# ---------------------------------------------------------- vídeo e memória
+check gpu_mesa bash -c "dpkg-query -W -f '\${Version}\n' mesa-vulkan-drivers:amd64 mesa-vulkan-drivers:i386"
+check gpu_nvidia_modulo bash -c "modinfo -F version nvidia-current 2>/dev/null || modinfo -F version nvidia"
+check gpu_nvidia_32bits bash -c "dpkg -l nvidia-driver-libs:i386 | tail -1"
+check gpu_escolha bash -c "systemctl is-active akkos-gpu; cat /run/akkos-gpu"
+check gpu_vulkan asu bash -c "vulkaninfo --summary 2>/dev/null | grep -E 'deviceName|driverName' | head -4"
+check zram bash -c "swapon --show=NAME,SIZE,PRIO --noheadings | grep zram"
+check espaco_live bash -c "df -h /home/$U | tail -1 | tr -s ' '; findmnt -no FSTYPE,OPTIONS /run/live/overlay 2>/dev/null | cut -c1-100; true"
 
 asu akko-navegador >/dev/null 2>&1 &
 sleep 15
@@ -126,6 +164,26 @@ for i in $(seq 1 15); do asu wmctrl -lx 2>/dev/null | grep -qi notepad || break;
 check windows_fechou_sem_erro bash -c "! asu wmctrl -l | grep 'não abriu'"
 asu bash -c "WINEPREFIX='$PFX' wineserver -k" 2>/dev/null
 sleep 2
+
+# ---------------------------------------------------------- instalar um programa Windows de verdade
+# qBittorrent 5.3.0 (o mesmo que falhou com "erro ao gravar" no modo sem instalar)
+QB="/home/$U/Downloads/qbittorrent_5.3.0_x64_setup.exe"
+QB_SHA=aff5b3bdc00d6e5773d6099ba30f9696dd3dfd1669ab0f64ce5c4e7168486436
+asu mkdir -p "/home/$U/Downloads"
+asu curl -fsSL --retry 3 --max-time 300 -o "$QB" \
+    "https://downloads.sourceforge.net/project/qbittorrent/qbittorrent-win32/qbittorrent-5.3.0/qbittorrent_5.3.0_x64_setup.exe"
+check qbittorrent_download bash -c "sha256sum '$QB' | grep -q $QB_SHA && ls -la '$QB'"
+check espaco_antes bash -c "df -h /home/$U | tail -1 | tr -s ' '"
+asu timeout 600 win-launcher --modo app --sem-tela "$QB" /S >/tmp/qb.log 2>&1
+check qbittorrent_instalado bash -c "ls -la '$PFX/drive_c/Program Files/qBittorrent/qbittorrent.exe' || { tail -15 /tmp/qb.log; tail -25 \$(ls -t /home/$U/.local/share/akkos/wine/logs/qbittorrent*.log | head -1); df -h /home/$U; false; }"
+check espaco_depois bash -c "df -h /home/$U | tail -1 | tr -s ' '"
+asu win-launcher --modo app "$PFX/drive_c/Program Files/qBittorrent/qbittorrent.exe" >/dev/null 2>&1 &
+for i in $(seq 1 60); do asu wmctrl -l 2>/dev/null | grep -qi 'qbittorrent' && break; sleep 1; done
+sleep 5
+check janela_qbittorrent asu bash -c "wmctrl -l | grep -i qbittorrent"
+shot 07b-qbittorrent
+asu bash -c "WINEPREFIX='$PFX' wineserver -k" 2>/dev/null
+sleep 3
 
 # ---------------------------------------------------------- escolha Aplicativo/Jogo
 check umu_launcher asu umu-run --version

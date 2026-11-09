@@ -1,0 +1,1252 @@
+#!/usr/bin/python3
+"""
+akko-tarefas — Gerenciador de Tarefas do Akko's OS (Ctrl+Shift+Esc).
+
+  Processos      aplicativos (com janela) e processos em segundo plano, com
+                 CPU, memória, disco e cor de intensidade; Finalizar tarefa
+  Desempenho     gráficos ao vivo: CPU (total e por núcleo), Memória, cada
+                 Disco, cada placa de rede e cada GPU (AMD/Intel/NVIDIA)
+  Inicialização  o que abre junto com a sessão; ativar/desativar
+  Detalhes       todos os processos (PID, usuário, threads, comando),
+                 prioridade, finalizar árvore, abrir local do arquivo
+  Serviços       serviços do sistema; iniciar/parar/reiniciar (pede senha)
+
+Atalhos: Delete finaliza a tarefa selecionada, Ctrl+F pesquisa, F5 atualiza.
+"""
+
+import collections
+import glob
+import os
+import shutil
+import signal
+import subprocess
+import sys
+import threading
+import time
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+from gi.repository import Gdk, Gio, GLib, GObject, Gtk, Pango  # noqa: E402
+
+try:
+    gi.require_version("Wnck", "3.0")
+    from gi.repository import Wnck  # noqa: E402
+except (ValueError, ImportError):
+    Wnck = None
+
+import psutil  # noqa: E402
+
+sys.path.insert(0, "/usr/lib/akkos/python")
+import akkos_comum as ak  # noqa: E402
+
+HIST = 60
+PAL = ak.paleta()
+COR = {
+    "cpu": PAL["brand"]["indigo"], "mem": PAL["brand"]["magenta"], "disco": "#22C55E",
+    "rede": PAL["brand"]["cyan"], "gpu": "#F59E0B",
+}
+
+CSS = """
+.tarefas .menu-lateral { background-color: @akk_surface; }
+.tarefas .menu-lateral row { padding: 10px 14px; border-radius: 6px; margin: 2px 6px; }
+.tarefas .menu-lateral row:selected { background-color: alpha(@akk_indigo, 0.35); }
+.tarefas .titulo-pagina { font-size: 15pt; font-weight: 700; margin: 12px 16px 6px 16px; }
+.tarefas .barra { padding: 6px 12px; }
+.tarefas .dispositivos row { padding: 8px; border-radius: 6px; margin: 2px 6px; }
+.tarefas .dispositivos row:selected { background-color: alpha(@akk_indigo, 0.30); }
+.tarefas .grande { font-size: 20pt; font-weight: 700; }
+.tarefas .rotulo-dado { color: @akk_muted; font-size: 9pt; }
+.tarefas .valor-dado { font-size: 12pt; }
+.tarefas treeview.view { background-color: @akk_bg; }
+"""
+
+
+def hex_rgb(h):
+    h = h.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
+
+
+def fmt_bytes(n):
+    return ak.formatar_tamanho(n)
+
+
+def fmt_taxa(n):
+    return f"{ak.formatar_tamanho(n)}/s" if n >= 1 else "0 B/s"
+
+
+def fmt_tempo(seg):
+    d, r = divmod(int(seg), 86400)
+    h, r = divmod(r, 3600)
+    m, s = divmod(r, 60)
+    return f"{d}:{h:02d}:{m:02d}:{s:02d}"
+
+
+# ==================================================================== gráfico
+
+class Grafico(Gtk.DrawingArea):
+    """Gráfico de área com grade, estilo Gerenciador de Tarefas."""
+
+    def __init__(self, cor, maximo=100.0, mini=False, series=1):
+        super().__init__()
+        self.cor = hex_rgb(cor)
+        self.maximo = maximo
+        self.auto = maximo is None
+        self.mini = mini
+        self.dados = [collections.deque([0.0] * HIST, maxlen=HIST) for _ in range(series)]
+        self.set_size_request(80 if mini else 300, 40 if mini else 160)
+        self.connect("draw", self._desenhar)
+
+    def adicionar(self, *valores):
+        for serie, v in zip(self.dados, valores):
+            serie.append(max(0.0, float(v)))
+        self.queue_draw()
+
+    def _desenhar(self, _w, cr):
+        w, h = self.get_allocated_width(), self.get_allocated_height()
+        r, g, b = self.cor
+        maximo = self.maximo
+        if self.auto:
+            maximo = max(1.0, max(max(s) for s in self.dados) * 1.15)
+        cr.set_source_rgba(r, g, b, 0.06)
+        cr.rectangle(0, 0, w, h)
+        cr.fill()
+        if not self.mini:
+            cr.set_source_rgba(r, g, b, 0.18)
+            cr.set_line_width(1)
+            for i in range(1, 10):
+                x = int(w * i / 10) + 0.5
+                cr.move_to(x, 0)
+                cr.line_to(x, h)
+            for i in range(1, 5):
+                y = int(h * i / 5) + 0.5
+                cr.move_to(0, y)
+                cr.line_to(w, y)
+            cr.stroke()
+        for idx, serie in enumerate(self.dados):
+            passo = w / (HIST - 1)
+            cr.move_to(0, h)
+            for i, v in enumerate(serie):
+                cr.line_to(i * passo, h - min(v / maximo, 1.0) * (h - 2))
+            cr.line_to(w, h)
+            cr.close_path()
+            alfa = 0.30 if idx == 0 else 0.0
+            cr.set_source_rgba(r, g, b, alfa)
+            cr.fill_preserve() if alfa else None
+            cr.new_path()
+            for i, v in enumerate(serie):
+                y = h - min(v / maximo, 1.0) * (h - 2)
+                (cr.move_to if i == 0 else cr.line_to)(i * passo, y)
+            cr.set_source_rgba(r, g, b, 1.0)
+            cr.set_line_width(1.5)
+            if idx == 1:
+                cr.set_dash([4, 3])
+            cr.stroke()
+            cr.set_dash([])
+        cr.set_source_rgba(r, g, b, 0.7)
+        cr.set_line_width(1)
+        cr.rectangle(0.5, 0.5, w - 1, h - 1)
+        cr.stroke()
+        return False
+
+
+# ==================================================================== GPUs
+
+class GPU:
+    """Leitura de uso da placa de vídeo pelo sysfs (AMD/Intel) ou nvidia-smi."""
+
+    def __init__(self, card):
+        self.card = card
+        self.dev = os.path.realpath(os.path.join(card, "device"))
+        self.vendor = self._ler(os.path.join(self.dev, "vendor"))
+        self.driver = os.path.basename(os.path.realpath(os.path.join(self.dev, "driver"))) \
+            if os.path.exists(os.path.join(self.dev, "driver")) else "?"
+        self.nome = self._nome_pci()
+        self.uso = None
+        self.vram_usada = self.vram_total = None
+        self.temp = None
+        self.freq = None
+        self._nv = None
+
+    @staticmethod
+    def _ler(caminho):
+        try:
+            with open(caminho) as f:
+                return f.read().strip()
+        except OSError:
+            return None
+
+    def _nome_pci(self):
+        slot = os.path.basename(self.dev)
+        try:
+            saida = subprocess.run(["lspci", "-s", slot], capture_output=True, text=True, timeout=3).stdout
+            if ":" in saida:
+                nome = saida.split(":", 2)[-1].strip()
+                return nome.split("(rev")[0].strip()
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        marca = {"0x1002": "AMD", "0x10de": "NVIDIA", "0x8086": "Intel", "0x1af4": "VirtIO", "0x1234": "QEMU",
+                 "0x15ad": "VMware"}.get(self.vendor, "Placa de vídeo")
+        return f"{marca} ({self.driver})"
+
+    def amostrar(self):
+        d = self.dev
+        busy = self._ler(os.path.join(d, "gpu_busy_percent"))           # amdgpu
+        if busy is not None:
+            self.uso = float(busy)
+            u, t = self._ler(os.path.join(d, "mem_info_vram_used")), self._ler(os.path.join(d, "mem_info_vram_total"))
+            if u and t:
+                self.vram_usada, self.vram_total = int(u), int(t)
+        elif self.driver == "nvidia" and shutil.which("nvidia-smi"):
+            try:
+                saida = subprocess.run(["nvidia-smi", "--query-gpu=pci.bus_id,utilization.gpu,memory.used,memory.total,"
+                                        "temperature.gpu,clocks.gr", "--format=csv,noheader,nounits"],
+                                       capture_output=True, text=True, timeout=3).stdout
+                slot = os.path.basename(d).lower()
+                for linha in saida.splitlines():
+                    p = [x.strip() for x in linha.split(",")]
+                    if len(p) >= 6 and p[0].lower().endswith(slot[-7:]):
+                        self.uso, self.vram_usada, self.vram_total = float(p[1]), int(p[2]) << 20, int(p[3]) << 20
+                        self.temp, self.freq = float(p[4]), float(p[5])
+            except (OSError, ValueError, subprocess.TimeoutExpired):
+                pass
+        else:                                                              # i915 / xe: só frequência
+            for arq in (os.path.join(self.card, "gt_act_freq_mhz"), *glob.glob(os.path.join(d, "tile0/gt0/freq0/act_freq"))):
+                f = self._ler(arq)
+                if f:
+                    self.freq = float(f)
+                    mx = self._ler(arq.replace("act_freq", "max_freq").replace("gt_act", "gt_max"))
+                    if mx and float(mx) > 0:
+                        self.uso = min(100.0, self.freq / float(mx) * 100)
+                    break
+        for hw in glob.glob(os.path.join(d, "hwmon", "hwmon*", "temp1_input")):
+            t = self._ler(hw)
+            if t:
+                self.temp = int(t) / 1000
+
+
+def listar_gpus():
+    gpus = []
+    for card in sorted(glob.glob("/sys/class/drm/card[0-9]")):
+        if os.path.exists(os.path.join(card, "device", "vendor")):
+            gpus.append(GPU(card))
+    return gpus
+
+
+# ==================================================================== janela
+
+class Janela(Gtk.ApplicationWindow):
+    def __init__(self, app):
+        super().__init__(application=app, title="Gerenciador de Tarefas")
+        self.get_style_context().add_class("akkos")
+        self.get_style_context().add_class("tarefas")
+        self.set_default_size(1100, 720)
+        self.set_icon_name("utilities-system-monitor")
+        self.intervalo = 1000
+        self.pausado = False
+        self.procs = {}
+        self.icones_app = {}
+        self.uid = os.getuid()
+        self.ncpu = psutil.cpu_count() or 1
+        self.disco_ant = psutil.disk_io_counters(perdisk=True) or {}
+        self.rede_ant = psutil.net_io_counters(pernic=True) or {}
+        self.t_ant = time.monotonic()
+        self.io_proc_ant = {}
+        self.gpus = listar_gpus()
+        self.servicos_carregados = False
+        psutil.cpu_percent(percpu=True)
+
+        if Wnck:
+            self.tela_wnck = Wnck.Screen.get_default()
+            self.tela_wnck.force_update()
+        else:
+            self.tela_wnck = None
+
+        raiz = Gtk.Box()
+        self.add(raiz)
+        lateral = Gtk.ListBox()
+        lateral.get_style_context().add_class("menu-lateral")
+        lateral.set_size_request(210, -1)
+        raiz.pack_start(lateral, False, False, 0)
+        self.paginas = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=100)
+        raiz.pack_start(self.paginas, True, True, 0)
+
+        for chave, icone, rotulo, construtor in (
+                ("processos", "view-grid-symbolic", "Processos", self._pagina_processos),
+                ("desempenho", "utilities-system-monitor-symbolic", "Desempenho", self._pagina_desempenho),
+                ("inicializacao", "system-run-symbolic", "Aplicativos de inicialização", self._pagina_inicio),
+                ("detalhes", "view-list-symbolic", "Detalhes", self._pagina_detalhes),
+                ("servicos", "preferences-system-symbolic", "Serviços", self._pagina_servicos)):
+            linha = Gtk.ListBoxRow()
+            linha.chave = chave
+            caixa = Gtk.Box(spacing=12)
+            caixa.pack_start(Gtk.Image.new_from_icon_name(icone, Gtk.IconSize.MENU), False, False, 0)
+            caixa.pack_start(Gtk.Label(label=rotulo, xalign=0), True, True, 0)
+            linha.add(caixa)
+            lateral.add(linha)
+            self.paginas.add_named(construtor(), chave)
+        lateral.connect("row-selected", self._trocar_pagina)
+        self.lateral = lateral
+        inicial = 0
+        for i, linha in enumerate(lateral.get_children()):
+            if getattr(linha, "chave", None) == PAGINA_INICIAL:
+                inicial = i
+        lateral.select_row(lateral.get_row_at_index(inicial))
+
+        self.connect("key-press-event", self._tecla)
+        self.atualizar()
+        self._timer = GLib.timeout_add(self.intervalo, self._tique)
+        self.connect("destroy", lambda *_: GLib.source_remove(self._timer))
+
+    def _trocar_pagina(self, _lb, linha):
+        if linha:
+            self.paginas.set_visible_child_name(linha.chave)
+            if linha.chave == "servicos" and not self.servicos_carregados:
+                self.carregar_servicos()
+            if linha.chave == "inicializacao":
+                self.carregar_inicio()
+
+    def _titulo(self, texto, extra=None):
+        caixa = Gtk.Box()
+        t = Gtk.Label(label=texto, xalign=0)
+        t.get_style_context().add_class("titulo-pagina")
+        caixa.pack_start(t, False, False, 0)
+        if extra:
+            caixa.pack_end(extra, False, False, 12)
+        return caixa
+
+    def _tecla(self, _w, ev):
+        ctrl = ev.state & Gdk.ModifierType.CONTROL_MASK
+        pagina = self.paginas.get_visible_child_name()
+        if ctrl and ev.keyval in (Gdk.KEY_f, Gdk.KEY_F):
+            self.busca.grab_focus()
+            return True
+        if ev.keyval == Gdk.KEY_F5:
+            self.atualizar()
+            return True
+        if ev.keyval == Gdk.KEY_Delete and not isinstance(self.get_focus(), Gtk.Entry):
+            if pagina == "processos":
+                self.finalizar_selecionado()
+            elif pagina == "detalhes":
+                self.finalizar_detalhe(False)
+            return True
+        return False
+
+    # ---------------------------------------------------------------- velocidade
+
+    def _menu_velocidade(self):
+        b = Gtk.MenuButton(tooltip_text="Velocidade de atualização")
+        b.add(Gtk.Image.new_from_icon_name("preferences-system-time-symbolic", Gtk.IconSize.BUTTON))
+        menu = Gtk.Menu()
+        for rotulo, ms in (("Alta (0,5 s)", 500), ("Normal (1 s)", 1000), ("Baixa (4 s)", 4000), ("Pausada", 0)):
+            mi = Gtk.MenuItem(label=rotulo)
+            mi.connect("activate", lambda *_, m=ms: self._velocidade(m))
+            menu.append(mi)
+        menu.show_all()
+        b.set_popup(menu)
+        return b
+
+    def _velocidade(self, ms):
+        GLib.source_remove(self._timer)
+        self.pausado = ms == 0
+        self.intervalo = ms or 1000
+        self._timer = GLib.timeout_add(self.intervalo, self._tique)
+
+    def _tique(self):
+        if not self.pausado:
+            self.atualizar()
+        return True
+
+    # ================================================================ Processos
+
+    def _pagina_processos(self):
+        caixa = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        barra = Gtk.Box(spacing=8)
+        barra.get_style_context().add_class("barra")
+        self.busca = Gtk.SearchEntry(placeholder_text="Digite um nome ou PID para pesquisar")
+        self.busca.set_width_chars(36)
+        self.busca.connect("search-changed", lambda *_: self.filtro_proc.refilter())
+        barra.pack_start(self.busca, False, False, 0)
+        nova = Gtk.Button(label="Executar nova tarefa")
+        nova.connect("clicked", lambda *_: self.executar_nova())
+        barra.pack_end(self._menu_velocidade(), False, False, 0)
+        self.b_finalizar = Gtk.Button(label="Finalizar tarefa", sensitive=False)
+        self.b_finalizar.get_style_context().add_class("destructive-action")
+        self.b_finalizar.connect("clicked", lambda *_: self.finalizar_selecionado())
+        barra.pack_end(self.b_finalizar, False, False, 0)
+        barra.pack_end(nova, False, False, 0)
+        caixa.pack_start(self._titulo("Processos", None), False, False, 0)
+        caixa.pack_start(barra, False, False, 0)
+
+        # nome, pid, cpu, mem(bytes), disco(B/s), cpu_txt, mem_txt, disco_txt, status, icone, cor_cpu, cor_mem, eh_grupo
+        self.arvore = Gtk.TreeStore(str, int, float, GObject.TYPE_INT64, float, str, str, str, str, str, str, str, bool)
+        self.filtro_proc = self.arvore.filter_new()
+        self.filtro_proc.set_visible_func(self._proc_visivel)
+        self.ord_proc = Gtk.TreeModelSort(model=self.filtro_proc)
+        self.tv_proc = Gtk.TreeView(model=self.ord_proc)
+        self.tv_proc.set_enable_search(False)
+        col = Gtk.TreeViewColumn("Nome")
+        ri = Gtk.CellRendererPixbuf()
+        col.pack_start(ri, False)
+        col.add_attribute(ri, "icon-name", 9)
+        rt = Gtk.CellRendererText(ellipsize=Pango.EllipsizeMode.END)
+        col.pack_start(rt, True)
+        col.set_cell_data_func(rt, self._fmt_nome)
+        col.set_expand(True)
+        col.set_resizable(True)
+        col.set_sort_column_id(0)
+        self.tv_proc.append_column(col)
+        st = Gtk.TreeViewColumn("Status", Gtk.CellRendererText(), text=8)
+        st.set_min_width(90)
+        self.tv_proc.append_column(st)
+        for titulo, txt, ordem, cor in (("CPU", 5, 2, 10), ("Memória", 6, 3, 11), ("Disco", 7, 4, None)):
+            r = Gtk.CellRendererText(xalign=1.0)
+            c = Gtk.TreeViewColumn(titulo, r, text=txt)
+            if cor is not None:
+                c.add_attribute(r, "cell-background", cor)
+            c.set_sort_column_id(ordem)
+            c.set_min_width(95)
+            c.set_alignment(1.0)
+            self.tv_proc.append_column(c)
+        self.ord_proc.set_sort_column_id(2, Gtk.SortType.DESCENDING)
+        self.tv_proc.get_selection().connect("changed", self._proc_sel)
+        self.tv_proc.connect("button-press-event", self._proc_clique)
+        r = Gtk.ScrolledWindow(vexpand=True)
+        r.add(self.tv_proc)
+        caixa.pack_start(r, True, True, 0)
+        self.resumo = Gtk.Label(xalign=0, margin=8)
+        self.resumo.get_style_context().add_class("akkos-muted")
+        caixa.pack_start(self.resumo, False, False, 0)
+        self.grupos = {}
+        self.linhas_proc = {}
+        return caixa
+
+    def _fmt_nome(self, _col, cell, modelo, it, *_):
+        grupo = modelo[it][12]
+        cell.set_property("text", modelo[it][0])
+        cell.set_property("weight", 700 if grupo else 400)
+
+    def _proc_visivel(self, modelo, it, *_):
+        termo = self.busca.get_text().strip().casefold()
+        if not termo or modelo[it][12]:
+            return True
+        if termo in modelo[it][0].casefold() or termo == str(modelo[it][1]):
+            return True
+        filho = modelo.iter_children(it)
+        while filho:
+            if termo in modelo[filho][0].casefold() or termo == str(modelo[filho][1]):
+                return True
+            filho = modelo.iter_next(filho)
+        return False
+
+    def _cor_calor(self, frac):
+        """Cor de fundo da célula: quanto mais uso, mais intensa (como no Windows)."""
+        if frac < 0.02:
+            return None
+        r, g, b = hex_rgb(PAL["brand"]["indigo"])
+        a = 0.12 + min(frac, 1.0) * 0.55
+        bg = hex_rgb(PAL["dark"]["background"])
+        mix = [int((c * a + f * (1 - a)) * 255) for c, f in zip((r, g, b), bg)]
+        return "#%02x%02x%02x" % tuple(mix)
+
+    def _janelas_por_pid(self):
+        apps = {}
+        if not self.tela_wnck:
+            return apps
+        self.tela_wnck.force_update()
+        for j in self.tela_wnck.get_windows():
+            if j.get_window_type() not in (Wnck.WindowType.NORMAL, Wnck.WindowType.DIALOG):
+                continue
+            pid = j.get_pid()
+            if pid <= 0:
+                continue
+            nome = j.get_class_group_name() or j.get_name()
+            apps.setdefault(pid, (nome, j.get_name()))
+        return apps
+
+    def _coletar(self):
+        agora = time.monotonic()
+        dt = max(0.2, agora - self.t_ant)
+        lista = []
+        for p in psutil.process_iter(["pid", "ppid", "name", "username", "status", "memory_info", "num_threads",
+                                      "cmdline", "exe", "uids", "nice"]):
+            try:
+                info = p.info
+                cpu = p.cpu_percent(None) / self.ncpu
+                io = None
+                try:
+                    c = p.io_counters()
+                    total = c.read_bytes + c.write_bytes
+                    ant = self.io_proc_ant.get(p.pid)
+                    io = (total - ant) / dt if ant is not None else 0.0
+                    self.io_proc_ant[p.pid] = total
+                except (psutil.AccessDenied, AttributeError, psutil.NoSuchProcess):
+                    pass
+                info["cpu"] = cpu
+                info["io"] = io or 0.0
+                info["mem"] = info["memory_info"].rss if info["memory_info"] else 0
+                lista.append(info)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        vivos = {i["pid"] for i in lista}
+        for pid in list(self.io_proc_ant):
+            if pid not in vivos:
+                del self.io_proc_ant[pid]
+        return lista
+
+    def _atualizar_processos(self, lista):
+        por_pid = {i["pid"]: i for i in lista}
+        filhos = collections.defaultdict(list)
+        for i in lista:
+            filhos[i["ppid"]].append(i["pid"])
+        janelas = self._janelas_por_pid()
+
+        def arvore_de(pid):
+            pilha, saida = [pid], []
+            while pilha:
+                x = pilha.pop()
+                saida.append(x)
+                pilha.extend(filhos.get(x, []))
+            return saida
+
+        apps = {}
+        usados = set()
+        for pid, (nome, titulo) in janelas.items():
+            if pid not in por_pid:
+                continue
+            membros = [m for m in arvore_de(pid) if m in por_pid]
+            apps[pid] = (nome, titulo, membros)
+            usados.update(membros)
+        fundo = [i for i in lista if i["pid"] not in usados and (i["uids"] and i["uids"].real == self.uid)]
+        sistema = [i for i in lista if i["pid"] not in usados and not (i["uids"] and i["uids"].real == self.uid)]
+
+        sel = self._pid_selecionado()
+        expandidos = set()
+        for g, it in self.grupos.items():
+            path = self.arvore.get_path(it)
+            p_f = self.filtro_proc.convert_child_path_to_path(path)
+            if p_f:
+                p_o = self.ord_proc.convert_child_path_to_path(p_f)
+                if p_o and self.tv_proc.row_expanded(p_o):
+                    expandidos.add(g)
+        primeira = not self.grupos
+        self.arvore.clear()
+        self.grupos = {}
+
+        def linha(parent, nome, pid, cpu, mem, io, status, icone, grupo=False):
+            return self.arvore.append(parent, [nome, pid, cpu, mem, io, f"{cpu:.1f}%" if not grupo or cpu else "",
+                                               fmt_bytes(mem) if mem else "", fmt_taxa(io) if io else ("" if grupo else "0 B/s"),
+                                               status, icone, self._cor_calor(cpu / 100 * 4) if not grupo else None,
+                                               self._cor_calor(mem / psutil.virtual_memory().total * 8) if not grupo else None,
+                                               grupo])
+
+        status_txt = {"running": "Em execução", "sleeping": "", "disk-sleep": "Aguardando disco", "stopped": "Suspenso",
+                      "zombie": "Zumbi", "idle": ""}
+
+        def grupo(chave, titulo, itens_count):
+            it = linha(None, f"{titulo} ({itens_count})", -1, 0, 0, 0, "", None, grupo=True)
+            self.grupos[chave] = it
+            return it
+
+        g = grupo("apps", "Aplicativos", len(apps))
+        for pid, (nome, titulo, membros) in sorted(apps.items(), key=lambda x: x[1][0].casefold()):
+            cpu = sum(por_pid[m]["cpu"] for m in membros)
+            mem = sum(por_pid[m]["mem"] for m in membros)
+            io = sum(por_pid[m]["io"] for m in membros)
+            rot = f"{nome}" + (f" ({len(membros)})" if len(membros) > 1 else "")
+            it = linha(g, rot, pid, cpu, mem, io, status_txt.get(por_pid[pid]["status"], ""), self._icone_app(por_pid[pid], nome))
+            if len(membros) > 1:
+                for m in membros:
+                    i = por_pid[m]
+                    linha(it, i["name"], m, i["cpu"], i["mem"], i["io"], status_txt.get(i["status"], ""), "application-x-executable")
+        g = grupo("fundo", "Processos em segundo plano", len(fundo))
+        for i in sorted(fundo, key=lambda x: -x["cpu"]):
+            linha(g, i["name"], i["pid"], i["cpu"], i["mem"], i["io"], status_txt.get(i["status"], ""), "application-x-executable")
+        g = grupo("sistema", "Processos do sistema", len(sistema))
+        for i in sorted(sistema, key=lambda x: -x["cpu"]):
+            linha(g, i["name"], i["pid"], i["cpu"], i["mem"], i["io"], status_txt.get(i["status"], ""), "system-run")
+
+        for chave, it in self.grupos.items():
+            if primeira and chave in ("apps", "fundo") or chave in expandidos:
+                path = self.arvore.get_path(it)
+                p_f = self.filtro_proc.convert_child_path_to_path(path)
+                if p_f:
+                    p_o = self.ord_proc.convert_child_path_to_path(p_f)
+                    if p_o:
+                        self.tv_proc.expand_row(p_o, False)
+        if sel:
+            self._selecionar_pid(sel)
+        vm = psutil.virtual_memory()
+        self.resumo.set_text(f"{len(lista)} processos    CPU {psutil.cpu_percent():.0f}%    "
+                             f"Memória {vm.percent:.0f}% ({fmt_bytes(vm.used)} de {fmt_bytes(vm.total)})")
+
+    def _icone_app(self, info, nome):
+        chave = (nome or "").lower()
+        if chave in self.icones_app:
+            return self.icones_app[chave]
+        icone = "application-x-executable"
+        tema = Gtk.IconTheme.get_default()
+        for candidato in (chave, chave.replace(" ", "-"), (info.get("name") or "").lower()):
+            if candidato and tema.has_icon(candidato):
+                icone = candidato
+                break
+        else:
+            for app in Gio.AppInfo.get_all():
+                ex = (app.get_executable() or "").split("/")[-1].lower()
+                if ex and (ex == (info.get("name") or "").lower() or app.get_name().lower() == chave):
+                    gi_ = app.get_icon()
+                    if isinstance(gi_, Gio.ThemedIcon) and gi_.get_names():
+                        icone = gi_.get_names()[0]
+                    break
+        self.icones_app[chave] = icone
+        return icone
+
+    def _pid_selecionado(self):
+        modelo, it = self.tv_proc.get_selection().get_selected()
+        if it and modelo[it][1] > 0:
+            return modelo[it][1]
+        return None
+
+    def _selecionar_pid(self, pid):
+        def procurar(modelo, path, it):
+            if modelo[it][1] == pid:
+                self.tv_proc.get_selection().select_path(path)
+                return True
+            return False
+        self.ord_proc.foreach(procurar)
+
+    def _proc_sel(self, *_):
+        self.b_finalizar.set_sensitive(self._pid_selecionado() is not None)
+
+    def _proc_clique(self, tv, ev):
+        if ev.type != Gdk.EventType.BUTTON_PRESS or ev.button != 3:
+            return False
+        hit = tv.get_path_at_pos(int(ev.x), int(ev.y))
+        if not hit:
+            return False
+        tv.get_selection().select_path(hit[0])
+        pid = self._pid_selecionado()
+        if not pid:
+            return True
+        self._menu_pid(pid, ev)
+        return True
+
+    def _menu_pid(self, pid, ev):
+        menu = Gtk.Menu()
+        for rotulo, func in (("Finalizar tarefa", lambda: self.finalizar(pid)),
+                             ("Finalizar árvore de processos", lambda: self.finalizar(pid, arvore=True)),
+                             (None, None),
+                             ("Abrir local do arquivo", lambda: self.abrir_local(pid)),
+                             ("Copiar linha de comando", lambda: self.copiar_cmd(pid)),
+                             ("Ir para detalhes", lambda: self.ir_detalhes(pid))):
+            if rotulo is None:
+                menu.append(Gtk.SeparatorMenuItem())
+                continue
+            mi = Gtk.MenuItem(label=rotulo)
+            mi.connect("activate", lambda *_, f=func: f())
+            menu.append(mi)
+        prio = Gtk.MenuItem(label="Definir prioridade")
+        sub = Gtk.Menu()
+        for rotulo, valor in (("Alta", -5), ("Acima do normal", -2), ("Normal", 0), ("Abaixo do normal", 5), ("Baixa", 15)):
+            mi = Gtk.MenuItem(label=rotulo)
+            mi.connect("activate", lambda *_, v=valor: self.prioridade(pid, v))
+            sub.append(mi)
+        prio.set_submenu(sub)
+        menu.append(prio)
+        menu.show_all()
+        menu.attach_to_widget(self, None)
+        menu.popup_at_pointer(ev)
+
+    def finalizar_selecionado(self):
+        pid = self._pid_selecionado()
+        if pid:
+            modelo, it = self.tv_proc.get_selection().get_selected()
+            arvore = modelo.iter_has_child(it)
+            self.finalizar(pid, arvore=arvore)
+
+    def finalizar(self, pid, arvore=False):
+        try:
+            p = psutil.Process(pid)
+            alvos = (p.children(recursive=True) if arvore else []) + [p]
+            nome = p.name()
+        except psutil.NoSuchProcess:
+            return
+        if pid == os.getpid() or nome in ("Xorg", "openbox", "lightdm", "systemd", "akko-painel"):
+            if not self._confirmar(f"Finalizar “{nome}”?",
+                                   "Este processo é parte do sistema ou da sessão. Finalizá-lo pode fechar a "
+                                   "área de trabalho ou travar o computador.", perigoso=True):
+                return
+        for a in alvos:
+            try:
+                a.terminate()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        _gone, vivos = psutil.wait_procs(alvos, timeout=3)
+        negados = []
+        for a in vivos:
+            try:
+                a.kill()
+            except psutil.AccessDenied:
+                negados.append(a.pid)
+            except psutil.NoSuchProcess:
+                pass
+        if negados:
+            if self._confirmar("Precisa de permissão de administrador",
+                               f"“{nome}” pertence a outro usuário ou ao sistema. Finalizar como administrador?"):
+                subprocess.run(["pkexec", "kill", "-9", *map(str, negados)])
+        ak.tocar("click")
+        self.atualizar()
+
+    def prioridade(self, pid, valor):
+        try:
+            psutil.Process(pid).nice(valor)
+        except psutil.AccessDenied:
+            subprocess.run(["pkexec", "renice", "-n", str(valor), "-p", str(pid)])
+        except psutil.NoSuchProcess:
+            pass
+
+    def abrir_local(self, pid):
+        try:
+            exe = psutil.Process(pid).exe()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return
+        if exe:
+            ak.executar_destacado(["akko-arquivos", os.path.dirname(exe)])
+
+    def copiar_cmd(self, pid):
+        try:
+            Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text(" ".join(psutil.Process(pid).cmdline()), -1)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+    def ir_detalhes(self, pid):
+        for linha in self.lateral.get_children():
+            if getattr(linha, "chave", None) == "detalhes":
+                self.lateral.select_row(linha)
+        self._atualizar_detalhes(self._coletar())
+        for linha in self.loja_det:
+            if linha[0] == pid:
+                path = self.ord_det.convert_child_path_to_path(linha.path)
+                if path:
+                    self.tv_det.get_selection().select_path(path)
+                    self.tv_det.scroll_to_cell(path, None, True, 0.5, 0)
+                break
+
+    def executar_nova(self):
+        d = Gtk.Dialog(title="Criar nova tarefa", transient_for=self, modal=True)
+        d.add_button("Cancelar", Gtk.ResponseType.CANCEL)
+        d.add_button("OK", Gtk.ResponseType.OK).get_style_context().add_class("suggested-action")
+        d.set_default_response(Gtk.ResponseType.OK)
+        area = d.get_content_area()
+        area.set_spacing(8)
+        area.set_margin_start(14)
+        area.set_margin_end(14)
+        area.set_margin_top(14)
+        area.add(Gtk.Label(label="Digite o nome de um programa, pasta ou arquivo (.exe também funciona):", xalign=0))
+        campo = Gtk.Entry(activates_default=True, width_chars=46)
+        area.add(campo)
+        d.show_all()
+        if d.run() == Gtk.ResponseType.OK and campo.get_text().strip():
+            texto = os.path.expanduser(campo.get_text().strip())
+            if os.path.isdir(texto):
+                ak.executar_destacado(["akko-arquivos", texto])
+            elif texto.lower().endswith((".exe", ".msi")):
+                ak.executar_destacado(["win-launcher", texto])
+            elif os.path.isfile(texto) and not os.access(texto, os.X_OK):
+                ak.executar_destacado(["xdg-open", texto])
+            else:
+                try:
+                    GLib.spawn_command_line_async(texto)
+                except GLib.Error as erro:
+                    self._confirmar("Não foi possível executar", erro.message, so_ok=True)
+        d.destroy()
+
+    def _confirmar(self, titulo, texto, perigoso=False, so_ok=False):
+        d = Gtk.MessageDialog(transient_for=self, modal=True, text=titulo,
+                              message_type=Gtk.MessageType.WARNING if perigoso else Gtk.MessageType.QUESTION,
+                              buttons=Gtk.ButtonsType.OK if so_ok else Gtk.ButtonsType.NONE)
+        d.format_secondary_text(texto)
+        if not so_ok:
+            d.add_button("Cancelar", Gtk.ResponseType.CANCEL)
+            b = d.add_button("Continuar", Gtk.ResponseType.OK)
+            b.get_style_context().add_class("destructive-action" if perigoso else "suggested-action")
+        r = d.run()
+        d.destroy()
+        return r == Gtk.ResponseType.OK
+
+    # ================================================================ Desempenho
+
+    def _dado(self, grade, col, linha, rotulo):
+        r = Gtk.Label(label=rotulo, xalign=0)
+        r.get_style_context().add_class("rotulo-dado")
+        v = Gtk.Label(label="—", xalign=0, selectable=True)
+        v.get_style_context().add_class("valor-dado")
+        grade.attach(r, col, linha * 2, 1, 1)
+        grade.attach(v, col, linha * 2 + 1, 1, 1)
+        return v
+
+    def _pagina_desempenho(self):
+        caixa = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        caixa.pack_start(self._titulo("Desempenho", self._menu_velocidade()), False, False, 0)
+        corpo = Gtk.Box(spacing=0)
+        caixa.pack_start(corpo, True, True, 0)
+        self.lista_disp = Gtk.ListBox()
+        self.lista_disp.get_style_context().add_class("dispositivos")
+        rl = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER)
+        rl.set_size_request(250, -1)
+        rl.add(self.lista_disp)
+        corpo.pack_start(rl, False, False, 0)
+        self.det_disp = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE)
+        rd = Gtk.ScrolledWindow()
+        rd.add(self.det_disp)
+        corpo.pack_start(rd, True, True, 0)
+        self.lista_disp.connect("row-selected", lambda _l, r: r and self.det_disp.set_visible_child_name(r.chave))
+        self.disp = {}
+
+        # CPU
+        modelo_cpu = "Processador"
+        try:
+            with open("/proc/cpuinfo") as f:
+                for l in f:
+                    if l.startswith("model name"):
+                        modelo_cpu = l.split(":", 1)[1].strip()
+                        break
+        except OSError:
+            pass
+        self._novo_disp("cpu", "CPU", modelo_cpu, COR["cpu"], 100,
+                        [("Utilização", "uso"), ("Velocidade", "freq"), ("Processos", "procs"),
+                         ("Threads", "threads"), ("Tempo de atividade", "uptime"),
+                         ("Núcleos lógicos", "nucleos"), ("Núcleos físicos", "fisicos")],
+                        nucleos=True)
+        vm = psutil.virtual_memory()
+        self._novo_disp("mem", "Memória", f"{fmt_bytes(vm.total)}", COR["mem"], 100,
+                        [("Em uso", "uso"), ("Disponível", "disp"), ("Em cache", "cache"),
+                         ("Confirmada (swap)", "swap"), ("Total", "total")])
+        self.discos = []
+        try:
+            blocos = set(os.listdir("/sys/block"))   # só discos inteiros (sem partições)
+        except OSError:
+            blocos = set()
+        for nome in sorted(self.disco_ant):
+            if nome not in blocos or nome.startswith(("loop", "ram", "zram", "sr", "dm-", "fd")):
+                continue
+            modelo = GPU._ler(f"/sys/block/{nome}/device/model") or nome
+            self.discos.append(nome)
+            self._novo_disp(f"disco:{nome}", f"Disco {len(self.discos) - 1} ({nome})", modelo, COR["disco"], 100,
+                            [("Tempo ativo", "ativo"), ("Leitura", "leit"), ("Gravação", "grav"), ("Capacidade", "cap")],
+                            series=1)
+        self.redes = []
+        for nome, st in sorted(psutil.net_if_stats().items()):
+            if nome == "lo" or nome.startswith(("veth", "docker", "br-", "virbr")):
+                continue
+            tipo = "Wi-Fi" if os.path.isdir(f"/sys/class/net/{nome}/wireless") else "Ethernet"
+            self.redes.append(nome)
+            self._novo_disp(f"rede:{nome}", tipo, nome, COR["rede"], None,
+                            [("Envio", "env"), ("Recebimento", "rec"), ("Endereço IPv4", "ip"), ("Velocidade do link", "link")],
+                            series=2)
+        for i, g in enumerate(self.gpus):
+            self._novo_disp(f"gpu:{i}", f"GPU {i}", g.nome, COR["gpu"], 100,
+                            [("Utilização", "uso"), ("Memória dedicada", "vram"), ("Temperatura", "temp"),
+                             ("Frequência", "freq"), ("Driver", "driver"), ("Vulkan", "vk")])
+            self.disp[f"gpu:{i}"]["valores"]["driver"].set_text(g.driver)
+            self.disp[f"gpu:{i}"]["valores"]["vk"].set_text("verificando…")
+        threading.Thread(target=self._info_vulkan, daemon=True).start()
+        self.lista_disp.select_row(self.lista_disp.get_row_at_index(0))
+        return caixa
+
+    def _info_vulkan(self):
+        texto = "vulkaninfo não instalado"
+        if shutil.which("vulkaninfo"):
+            try:
+                saida = subprocess.run(["vulkaninfo", "--summary"], capture_output=True, text=True, timeout=15).stdout
+                nomes = [l.split("=", 1)[1].strip() for l in saida.splitlines() if "deviceName" in l]
+                texto = ", ".join(nomes) or "nenhum dispositivo Vulkan"
+            except (OSError, subprocess.TimeoutExpired):
+                texto = "erro ao consultar"
+        GLib.idle_add(lambda: [d["valores"]["vk"].set_text(texto) for k, d in self.disp.items()
+                               if k.startswith("gpu:")] and False)
+
+    def _novo_disp(self, chave, titulo, sub, cor, maximo, campos, series=1, nucleos=False):
+        linha = Gtk.ListBoxRow()
+        linha.chave = chave
+        lc = Gtk.Box(spacing=10)
+        mini = Grafico(cor, maximo, mini=True, series=series)
+        lc.pack_start(mini, False, False, 0)
+        tx = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER)
+        tx.pack_start(Gtk.Label(label=titulo, xalign=0, ellipsize=Pango.EllipsizeMode.END), False, False, 0)
+        resumo = Gtk.Label(label="", xalign=0, ellipsize=Pango.EllipsizeMode.END)
+        resumo.get_style_context().add_class("akkos-muted")
+        tx.pack_start(resumo, False, False, 0)
+        lc.pack_start(tx, True, True, 0)
+        linha.add(lc)
+        self.lista_disp.add(linha)
+
+        pag = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin=16)
+        topo = Gtk.Box()
+        t = Gtk.Label(label=titulo, xalign=0)
+        t.get_style_context().add_class("grande")
+        topo.pack_start(t, False, False, 0)
+        s = Gtk.Label(label=sub, xalign=1, ellipsize=Pango.EllipsizeMode.END)
+        topo.pack_end(s, True, True, 0)
+        pag.pack_start(topo, False, False, 0)
+        grande = Grafico(cor, maximo, series=series)
+        grande.set_vexpand(False)
+        grande.set_size_request(-1, 260)
+        pag.pack_start(grande, False, False, 0)
+        nucs = []
+        if nucleos:
+            fb = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, max_children_per_line=8, min_children_per_line=4,
+                             column_spacing=4, row_spacing=4, homogeneous=True)
+            for _ in range(self.ncpu):
+                g = Grafico(cor, 100, mini=True)
+                g.set_size_request(-1, 50)
+                fb.add(g)
+                nucs.append(g)
+            exp = Gtk.Expander(label="Uso por núcleo lógico")
+            exp.add(fb)
+            pag.pack_start(exp, False, False, 0)
+        grade = Gtk.Grid(column_spacing=40, row_spacing=2, margin_top=10)
+        valores = {}
+        for i, (rot, k) in enumerate(campos):
+            valores[k] = self._dado(grade, i % 3, i // 3, rot)
+        pag.pack_start(grade, False, False, 0)
+        self.det_disp.add_named(pag, chave)
+        self.disp[chave] = {"mini": mini, "grande": grande, "resumo": resumo, "valores": valores, "nucleos": nucs}
+
+    def _atualizar_desempenho(self, lista):
+        agora = time.monotonic()
+        dt = max(0.2, agora - self.t_ant)
+        self.t_ant = agora
+        d = self.disp
+        # CPU
+        por = psutil.cpu_percent(percpu=True)
+        total = sum(por) / len(por) if por else 0
+        c = d["cpu"]
+        c["mini"].adicionar(total)
+        c["grande"].adicionar(total)
+        for g, v in zip(c["nucleos"], por):
+            g.adicionar(v)
+        f = psutil.cpu_freq()
+        c["resumo"].set_text(f"{total:.0f}%  {f.current / 1000:.2f} GHz" if f else f"{total:.0f}%")
+        v = c["valores"]
+        v["uso"].set_text(f"{total:.0f}%")
+        v["freq"].set_text(f"{f.current / 1000:.2f} GHz" if f else "—")
+        v["procs"].set_text(str(len(lista)))
+        v["threads"].set_text(str(sum(i.get("num_threads") or 0 for i in lista)))
+        v["uptime"].set_text(fmt_tempo(time.time() - psutil.boot_time()))
+        v["nucleos"].set_text(str(self.ncpu))
+        v["fisicos"].set_text(str(psutil.cpu_count(logical=False) or "—"))
+        # memória
+        vm, sw = psutil.virtual_memory(), psutil.swap_memory()
+        m = d["mem"]
+        m["mini"].adicionar(vm.percent)
+        m["grande"].adicionar(vm.percent)
+        m["resumo"].set_text(f"{fmt_bytes(vm.used)}/{fmt_bytes(vm.total)} ({vm.percent:.0f}%)")
+        m["valores"]["uso"].set_text(fmt_bytes(vm.used))
+        m["valores"]["disp"].set_text(fmt_bytes(vm.available))
+        m["valores"]["cache"].set_text(fmt_bytes(getattr(vm, "cached", 0) + getattr(vm, "buffers", 0)))
+        m["valores"]["swap"].set_text(f"{fmt_bytes(sw.used)} de {fmt_bytes(sw.total)}" if sw.total else "sem swap")
+        m["valores"]["total"].set_text(fmt_bytes(vm.total))
+        # discos
+        io = psutil.disk_io_counters(perdisk=True) or {}
+        for nome in self.discos:
+            a, b = self.disco_ant.get(nome), io.get(nome)
+            if not (a and b):
+                continue
+            ativo = min(100.0, (getattr(b, "busy_time", 0) - getattr(a, "busy_time", 0)) / (dt * 10))
+            leit = (b.read_bytes - a.read_bytes) / dt
+            grav = (b.write_bytes - a.write_bytes) / dt
+            x = d[f"disco:{nome}"]
+            x["mini"].adicionar(ativo)
+            x["grande"].adicionar(ativo)
+            x["resumo"].set_text(f"{ativo:.0f}%")
+            x["valores"]["ativo"].set_text(f"{ativo:.0f}%")
+            x["valores"]["leit"].set_text(fmt_taxa(leit))
+            x["valores"]["grav"].set_text(fmt_taxa(grav))
+            tam = GPU._ler(f"/sys/block/{nome}/size")
+            x["valores"]["cap"].set_text(fmt_bytes(int(tam) * 512) if tam else "—")
+        self.disco_ant = io
+        # rede
+        nio = psutil.net_io_counters(pernic=True) or {}
+        ends = psutil.net_if_addrs()
+        stats = psutil.net_if_stats()
+        for nome in self.redes:
+            a, b = self.rede_ant.get(nome), nio.get(nome)
+            if not (a and b):
+                continue
+            env = (b.bytes_sent - a.bytes_sent) / dt
+            rec = (b.bytes_recv - a.bytes_recv) / dt
+            x = d[f"rede:{nome}"]
+            x["mini"].adicionar(rec * 8 / 1000, env * 8 / 1000)
+            x["grande"].adicionar(rec * 8 / 1000, env * 8 / 1000)
+            x["resumo"].set_text(f"E: {fmt_taxa(env)}  R: {fmt_taxa(rec)}")
+            x["valores"]["env"].set_text(f"{env * 8 / 1000:.0f} Kbps")
+            x["valores"]["rec"].set_text(f"{rec * 8 / 1000:.0f} Kbps")
+            ip = next((e.address for e in ends.get(nome, []) if e.family.name == "AF_INET"), "—")
+            x["valores"]["ip"].set_text(ip)
+            st = stats.get(nome)
+            x["valores"]["link"].set_text(f"{st.speed} Mbps" if st and st.speed else ("desconectado" if st and not st.isup else "—"))
+        self.rede_ant = nio
+        # GPUs (amostradas em segundo plano: nvidia-smi pode demorar)
+        for i, g in enumerate(self.gpus):
+            x = d[f"gpu:{i}"]
+            uso = g.uso if g.uso is not None else 0
+            x["mini"].adicionar(uso)
+            x["grande"].adicionar(uso)
+            x["resumo"].set_text(f"{uso:.0f}%" + (f"  {g.temp:.0f} °C" if g.temp else "") if g.uso is not None
+                                 else "uso indisponível")
+            x["valores"]["uso"].set_text(f"{uso:.0f}%" if g.uso is not None else "indisponível neste driver")
+            x["valores"]["vram"].set_text(f"{fmt_bytes(g.vram_usada)} / {fmt_bytes(g.vram_total)}"
+                                          if g.vram_total else "—")
+            x["valores"]["temp"].set_text(f"{g.temp:.0f} °C" if g.temp else "—")
+            x["valores"]["freq"].set_text(f"{g.freq:.0f} MHz" if g.freq else "—")
+
+    def _amostrar_gpus(self):
+        for g in self.gpus:
+            g.amostrar()
+        return False
+
+    # ================================================================ Inicialização
+
+    def _pagina_inicio(self):
+        caixa = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        b = Gtk.Button(label="Ativar / Desativar")
+        b.connect("clicked", lambda *_: self.alternar_inicio())
+        caixa.pack_start(self._titulo("Aplicativos de inicialização", b), False, False, 0)
+        # nome, comando, status_txt, ativo, arquivo, icone
+        self.loja_ini = Gtk.ListStore(str, str, str, bool, str, str)
+        tv = Gtk.TreeView(model=self.loja_ini)
+        col = Gtk.TreeViewColumn("Nome")
+        ri = Gtk.CellRendererPixbuf()
+        col.pack_start(ri, False)
+        col.add_attribute(ri, "icon-name", 5)
+        rt = Gtk.CellRendererText()
+        col.pack_start(rt, True)
+        col.add_attribute(rt, "text", 0)
+        col.set_expand(True)
+        tv.append_column(col)
+        tg = Gtk.CellRendererToggle()
+        tg.connect("toggled", lambda _r, path: self.alternar_inicio(path))
+        tv.append_column(Gtk.TreeViewColumn("Ativo", tg, active=3))
+        tv.append_column(Gtk.TreeViewColumn("Status", Gtk.CellRendererText(), text=2))
+        tv.append_column(Gtk.TreeViewColumn("Comando", Gtk.CellRendererText(ellipsize=Pango.EllipsizeMode.END), text=1))
+        self.tv_ini = tv
+        r = Gtk.ScrolledWindow(vexpand=True)
+        r.add(tv)
+        caixa.pack_start(r, True, True, 0)
+        nota = Gtk.Label(label="Itens da sessão do Akko's OS (painel, sons, área de trabalho) não aparecem aqui "
+                               "para não serem desligados por engano.", xalign=0, wrap=True, margin=10)
+        nota.get_style_context().add_class("akkos-muted")
+        caixa.pack_start(nota, False, False, 0)
+        return caixa
+
+    def carregar_inicio(self):
+        self.loja_ini.clear()
+        usuario = os.path.join(GLib.get_user_config_dir(), "autostart")
+        vistos = {}
+        for pasta in ("/etc/xdg/autostart", usuario):
+            for arq in sorted(glob.glob(os.path.join(pasta, "*.desktop"))):
+                vistos[os.path.basename(arq)] = arq
+        for nome, arq in sorted(vistos.items()):
+            kf = GLib.KeyFile()
+            try:
+                kf.load_from_file(arq, GLib.KeyFileFlags.NONE)
+            except GLib.Error:
+                continue
+
+            def ler(k, padrao=""):
+                try:
+                    return kf.get_locale_string("Desktop Entry", k, None)
+                except GLib.Error:
+                    return padrao
+            oculto = ler("Hidden", "false").lower() == "true"
+            so_em = ler("OnlyShowIn", "")
+            if so_em and "akkos" not in so_em.lower() and "openbox" not in so_em.lower() and "xfce" not in so_em.lower():
+                continue
+            if ler("NoDisplay", "false").lower() == "true" and not oculto:
+                continue
+            self.loja_ini.append([ler("Name", nome), ler("Exec"), "Desabilitado" if oculto else "Habilitado",
+                                  not oculto, nome, ler("Icon", "application-x-executable") or "application-x-executable"])
+
+    def alternar_inicio(self, path=None):
+        if path is None:
+            modelo, it = self.tv_ini.get_selection().get_selected()
+            if not it:
+                return
+        else:
+            it = self.loja_ini.get_iter(path)
+        nome, ativo = self.loja_ini[it][4], self.loja_ini[it][3]
+        usuario = os.path.join(GLib.get_user_config_dir(), "autostart")
+        os.makedirs(usuario, exist_ok=True)
+        destino = os.path.join(usuario, nome)
+        origem = destino if os.path.exists(destino) else os.path.join("/etc/xdg/autostart", nome)
+        kf = GLib.KeyFile()
+        try:
+            kf.load_from_file(origem, GLib.KeyFileFlags.KEEP_COMMENTS | GLib.KeyFileFlags.KEEP_TRANSLATIONS)
+        except GLib.Error:
+            return
+        kf.set_string("Desktop Entry", "Hidden", "true" if ativo else "false")
+        kf.save_to_file(destino)
+        ak.tocar("click")
+        self.carregar_inicio()
+
+    # ================================================================ Detalhes
+
+    def _pagina_detalhes(self):
+        caixa = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        b = Gtk.Button(label="Finalizar tarefa")
+        b.get_style_context().add_class("destructive-action")
+        b.connect("clicked", lambda *_: self.finalizar_detalhe(False))
+        caixa.pack_start(self._titulo("Detalhes", b), False, False, 0)
+        # pid, nome, status, usuario, cpu, cpu_txt, mem, mem_txt, threads, prioridade, comando
+        self.loja_det = Gtk.ListStore(int, str, str, str, float, str, GObject.TYPE_INT64, str, int, int, str)
+        self.ord_det = Gtk.TreeModelSort(model=self.loja_det)
+        self.ord_det.set_sort_column_id(4, Gtk.SortType.DESCENDING)
+        tv = Gtk.TreeView(model=self.ord_det)
+        for titulo, txt, ordem, larg in (("Nome", 1, 1, 180), ("PID", 0, 0, 70), ("Status", 2, 2, 90),
+                                         ("Usuário", 3, 3, 90), ("CPU", 5, 4, 70), ("Memória", 7, 6, 90),
+                                         ("Threads", 8, 8, 70), ("Prioridade", 9, 9, 80), ("Linha de comando", 10, 10, 300)):
+            r = Gtk.CellRendererText(ellipsize=Pango.EllipsizeMode.END if txt in (1, 10) else Pango.EllipsizeMode.NONE)
+            c = Gtk.TreeViewColumn(titulo, r, text=txt)
+            c.set_sort_column_id(ordem)
+            c.set_resizable(True)
+            c.set_min_width(larg)
+            if txt == 10:
+                c.set_expand(True)
+            tv.append_column(c)
+        tv.connect("button-press-event", self._det_clique)
+        self.tv_det = tv
+        r = Gtk.ScrolledWindow(vexpand=True)
+        r.add(tv)
+        caixa.pack_start(r, True, True, 0)
+        return caixa
+
+    def _atualizar_detalhes(self, lista):
+        modelo, it = self.tv_det.get_selection().get_selected()
+        sel = modelo[it][0] if it else None
+        self.loja_det.clear()
+        estados = {"running": "Em execução", "sleeping": "Em espera", "disk-sleep": "Aguardando disco",
+                   "stopped": "Suspenso", "zombie": "Zumbi", "idle": "Ocioso"}
+        for i in lista:
+            cmd = " ".join(i["cmdline"] or []) or f"[{i['name']}]"
+            self.loja_det.append([i["pid"], i["name"] or "?", estados.get(i["status"], i["status"] or ""),
+                                  i["username"] or "?", i["cpu"], f"{i['cpu']:.1f}", i["mem"], fmt_bytes(i["mem"]),
+                                  i["num_threads"] or 0, i["nice"] if i["nice"] is not None else 0, cmd])
+        if sel:
+            for linha in self.ord_det:
+                if linha[0] == sel:
+                    self.tv_det.get_selection().select_path(linha.path)
+                    break
+
+    def _det_pid(self):
+        modelo, it = self.tv_det.get_selection().get_selected()
+        return modelo[it][0] if it else None
+
+    def _det_clique(self, tv, ev):
+        if ev.type != Gdk.EventType.BUTTON_PRESS or ev.button != 3:
+            return False
+        hit = tv.get_path_at_pos(int(ev.x), int(ev.y))
+        if hit:
+            tv.get_selection().select_path(hit[0])
+            pid = self._det_pid()
+            if pid:
+                self._menu_pid(pid, ev)
+        return True
+
+    def finalizar_detalhe(self, arvore):
+        pid = self._det_pid()
+        if pid:
+            self.finalizar(pid, arvore)
+
+    # ================================================================ Serviços
+
+    def _pagina_servicos(self):
+        caixa = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        acoes = Gtk.Box(spacing=6)
+        for rotulo, verbo in (("Iniciar", "start"), ("Parar", "stop"), ("Reiniciar", "restart")):
+            b = Gtk.Button(label=rotulo)
+            b.connect("clicked", lambda *_, v=verbo: self.servico(v))
+            acoes.pack_start(b, False, False, 0)
+        caixa.pack_start(self._titulo("Serviços", acoes), False, False, 0)
+        # nome, descricao, estado, sub, cor
+        self.loja_srv = Gtk.ListStore(str, str, str, str)
+        ordem = Gtk.TreeModelSort(model=self.loja_srv)
+        ordem.set_sort_column_id(0, Gtk.SortType.ASCENDING)
+        tv = Gtk.TreeView(model=ordem)
+        for titulo, col in (("Nome", 0), ("Descrição", 1), ("Status", 2), ("Detalhe", 3)):
+            c = Gtk.TreeViewColumn(titulo, Gtk.CellRendererText(ellipsize=Pango.EllipsizeMode.END), text=col)
+            c.set_sort_column_id(col)
+            c.set_resizable(True)
+            c.set_min_width(120 if col != 1 else 300)
+            tv.append_column(c)
+        self.tv_srv = tv
+        r = Gtk.ScrolledWindow(vexpand=True)
+        r.add(tv)
+        caixa.pack_start(r, True, True, 0)
+        return caixa
+
+    def carregar_servicos(self):
+        self.servicos_carregados = True
+        self.loja_srv.clear()
+        try:
+            saida = subprocess.run(["systemctl", "list-units", "--type=service", "--all", "--no-legend", "--plain",
+                                    "--no-pager"], capture_output=True, text=True, timeout=10).stdout
+        except (OSError, subprocess.TimeoutExpired):
+            return
+        traducao = {"active": "Em execução", "inactive": "Parado", "failed": "Falhou", "activating": "Iniciando",
+                    "deactivating": "Parando"}
+        for linha in saida.splitlines():
+            p = linha.split(None, 4)
+            if len(p) < 4 or not p[0].endswith(".service"):
+                continue
+            self.loja_srv.append([p[0][:-8], p[4] if len(p) > 4 else "", traducao.get(p[2], p[2]), p[3]])
+
+    def servico(self, verbo):
+        modelo, it = self.tv_srv.get_selection().get_selected()
+        if not it:
+            return
+        nome = modelo[it][0] + ".service"
+        r = subprocess.run(["pkexec", "systemctl", verbo, nome], capture_output=True, text=True)
+        if r.returncode not in (0, 126, 127):
+            self._confirmar("Não foi possível alterar o serviço", (r.stderr or "").strip()[:400], so_ok=True)
+        self.carregar_servicos()
+
+    # ================================================================ ciclo
+
+    def atualizar(self):
+        lista = self._coletar()
+        self._atualizar_desempenho(lista)
+        pagina = self.paginas.get_visible_child_name()
+        if pagina == "processos" or not hasattr(self, "_primeira"):
+            self._atualizar_processos(lista)
+            self._primeira = True
+        if pagina == "detalhes":
+            self._atualizar_detalhes(lista)
+        threading.Thread(target=self._amostrar_gpus, daemon=True).start()
+        return False
+
+
+class App(Gtk.Application):
+    def __init__(self):
+        super().__init__(application_id="org.akkos.Tarefas", flags=Gio.ApplicationFlags.FLAGS_NONE)
+        self.janela = None
+
+    def do_activate(self):
+        if self.janela is None:
+            ak.aplicar_css(CSS)
+            Gtk.Settings.get_default().set_property("gtk-application-prefer-dark-theme", True)
+            self.janela = Janela(self)
+            self.janela.show_all()
+        self.janela.present()
+
+
+PAGINA_INICIAL = None
+
+if __name__ == "__main__":
+    args = sys.argv[:]
+    for chave in ("processos", "desempenho", "inicializacao", "detalhes", "servicos"):
+        if f"--{chave}" in args:
+            PAGINA_INICIAL = chave
+            args.remove(f"--{chave}")
+    sys.exit(App().run(args))

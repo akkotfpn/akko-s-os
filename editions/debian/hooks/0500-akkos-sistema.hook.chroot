@@ -22,7 +22,7 @@ HOME_URL="https://github.com/akkotfpn/akko-s-os"
 SUPPORT_URL="https://github.com/akkotfpn/akko-s-os/issues"
 BUG_REPORT_URL="https://github.com/akkotfpn/akko-s-os/issues"
 LOGO=akkos-logo
-ANSI_COLOR="1;96"
+ANSI_COLOR="1;91"
 OSR
 ln -sf ../usr/lib/os-release /etc/os-release
 printf "Akko's OS %s \\\\n \\\\l\n\n" "$VERSAO" > /etc/issue
@@ -64,6 +64,40 @@ for app in nm-applet obconf openbox lxpolkit display-im6.q16 xfce4-terminal-sett
     cp "/usr/share/applications/$app.desktop" "/usr/local/share/applications/$app.desktop"
     echo "NoDisplay=true" >> "/usr/local/share/applications/$app.desktop"
 done
+
+log "instalador (Calamares) com a marca do Akko's OS"
+if [ -f /etc/calamares/settings.conf ]; then
+    sed -i 's/^branding: .*/branding: akkos/' /etc/calamares/settings.conf
+    grep -q '^branding: akkos' /etc/calamares/settings.conf
+    # o sistema instalado não leva o instalador nem as ferramentas do modo live
+    if ! grep -q "'calamares'$" /etc/calamares/modules/packages.conf; then
+        sed -i "s/^\(\s*\)- 'calamares-settings-debian'/\1- 'calamares-settings-debian'\n\1- 'calamares'/" \
+            /etc/calamares/modules/packages.conf
+    fi
+    grep -q "'calamares'" /etc/calamares/modules/packages.conf
+    # o ícone "Instalar" é nosso (área de trabalho e menu)
+    rm -f /etc/xdg/autostart/calamares-desktop-icon.desktop
+    if [ -f /usr/share/applications/calamares-install-debian.desktop ]; then
+        mkdir -p /usr/local/share/applications
+        cp /usr/share/applications/calamares-install-debian.desktop /usr/local/share/applications/
+        echo "NoDisplay=true" >> /usr/local/share/applications/calamares-install-debian.desktop
+    fi
+fi
+# GRUB do sistema instalado: nome e tela do Akko's OS
+mkdir -p /etc/default/grub.d
+cat > /etc/default/grub.d/akkos.cfg <<'GRUB'
+GRUB_DISTRIBUTOR="Akko's OS"
+GRUB_CMDLINE_LINUX_DEFAULT="quiet splash init_on_alloc=1 slab_nomerge page_alloc.shuffle=1"
+GRUB_TIMEOUT=3
+GRUB_BACKGROUND=/usr/share/akkos/grub-fundo.png
+GRUB_GFXMODE=auto
+GRUB
+
+log "zram: swap comprimida (zstd) — a memória rende mais, inclusive no modo sem instalar"
+if [ -f /etc/default/zramswap ]; then
+    sed -i -e 's/^#\?ALGO=.*/ALGO=zstd/' -e 's/^#\?PERCENT=.*/PERCENT=60/' -e 's/^#\?PRIORITY=.*/PRIORITY=100/' /etc/default/zramswap
+    systemctl enable zramswap.service || true
+fi
 
 log "Flatpak: repositório Flathub"
 flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo

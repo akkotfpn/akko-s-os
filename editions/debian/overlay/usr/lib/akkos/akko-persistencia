@@ -1,0 +1,171 @@
+#!/usr/bin/python3
+"""
+akko-persistencia — "Guardar alterações" do Akko's OS rodando sem instalar.
+
+Prepara um disco (um segundo disco da VM, um HD externo ou outro pendrive)
+com uma partição "akkos-dados". Depois, no menu de boot, a opção
+"Usar sem instalar, guardando as alterações" grava ali tudo o que você fizer:
+arquivos, programas instalados (inclusive Windows), Wi-Fi, configurações.
+"""
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import threading
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+from gi.repository import GLib, Gtk  # noqa: E402
+
+sys.path.insert(0, "/usr/lib/akkos/python")
+import akkos_comum as ak  # noqa: E402
+
+AJUDANTE = "/usr/lib/akkos/akko-persistencia-criar"
+
+
+def em_uso():
+    """Partição de persistência em uso agora (ou None)."""
+    try:
+        with open("/proc/mounts") as f:
+            for linha in f:
+                dev, ponto = linha.split()[:2]
+                if ponto.startswith("/run/live/persistence/"):
+                    return dev
+    except OSError:
+        pass
+    return None
+
+
+def discos():
+    midia = subprocess.run(["findmnt", "-no", "SOURCE", "/run/live/medium"], capture_output=True, text=True).stdout.strip()
+    pai = subprocess.run(["lsblk", "-no", "PKNAME", midia], capture_output=True, text=True).stdout.strip().split("\n")[0] \
+        if midia else ""
+    saida = subprocess.run(["lsblk", "-J", "-b", "-o", "NAME,PATH,SIZE,MODEL,TRAN,TYPE,RM,LABEL"],
+                           capture_output=True, text=True).stdout
+    lista = []
+    for d in json.loads(saida or '{"blockdevices": []}').get("blockdevices", []):
+        if d.get("type") != "disk" or d["name"].startswith(("loop", "sr", "zram", "ram")):
+            continue
+        if d["name"] == pai or d["path"] == midia:
+            continue
+        rotulos = [c.get("label") for c in d.get("children", []) or []]
+        lista.append({"caminho": d["path"], "tamanho": int(d.get("size") or 0),
+                      "modelo": (d.get("model") or "Disco").strip(), "usb": d.get("tran") == "usb" or d.get("rm"),
+                      "pronto": "akkos-dados" in rotulos})
+    return lista
+
+
+class Janela(Gtk.Window):
+    def __init__(self):
+        super().__init__(title="Guardar alterações")
+        self.get_style_context().add_class("akkos")
+        self.set_default_size(560, 440)
+        self.set_position(Gtk.WindowPosition.CENTER)
+        self.connect("destroy", Gtk.main_quit)
+        caixa = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin=18)
+        self.add(caixa)
+        t = Gtk.Label(xalign=0)
+        t.set_markup("<span size='large' weight='bold'>Usar sem instalar, guardando as alterações</span>")
+        caixa.pack_start(t, False, False, 0)
+
+        if not os.path.isdir("/run/live/medium"):
+            caixa.pack_start(Gtk.Label(label="O Akko's OS já está instalado neste computador: tudo já fica guardado.",
+                                       wrap=True, xalign=0), False, False, 0)
+            return
+        atual = em_uso()
+        if atual:
+            r = Gtk.Label(wrap=True, xalign=0)
+            r.set_markup(f"<b>Suas alterações já estão sendo guardadas</b> em {GLib.markup_escape_text(atual)}.")
+            caixa.pack_start(r, False, False, 0)
+        explica = Gtk.Label(wrap=True, xalign=0, label=(
+            "Escolha um disco para guardar seus arquivos, programas e configurações. Pode ser um segundo disco "
+            "da máquina virtual, um HD externo ou outro pendrive. Depois, reinicie e escolha no menu "
+            "“Usar sem instalar, guardando as alterações”.\n\nTudo o que estiver no disco escolhido será apagado."))
+        caixa.pack_start(explica, False, False, 0)
+
+        self.loja = Gtk.ListStore(str, str, str, str)   # caminho, descrição, tamanho, estado
+        tv = Gtk.TreeView(model=self.loja)
+        for titulo, col in (("Disco", 1), ("Tamanho", 2), ("Situação", 3)):
+            tv.append_column(Gtk.TreeViewColumn(titulo, Gtk.CellRendererText(), text=col))
+        self.tv = tv
+        r = Gtk.ScrolledWindow(vexpand=True)
+        r.add(tv)
+        caixa.pack_start(r, True, True, 0)
+        self.vazio = Gtk.Label(wrap=True, xalign=0, label="Nenhum outro disco encontrado. Na máquina virtual, adicione "
+                               "um segundo disco (ex.: 16 GB) e abra esta ferramenta de novo.")
+        self.vazio.get_style_context().add_class("akkos-muted")
+        self.vazio.set_no_show_all(True)
+        caixa.pack_start(self.vazio, False, False, 0)
+        self.confirma = Gtk.CheckButton(label="Entendo que tudo no disco escolhido será apagado")
+        caixa.pack_start(self.confirma, False, False, 0)
+        botoes = Gtk.Box(spacing=8)
+        atualizar = Gtk.Button(label="Procurar discos de novo")
+        atualizar.connect("clicked", lambda *_: self.carregar())
+        self.preparar = Gtk.Button(label="Preparar disco")
+        self.preparar.get_style_context().add_class("destructive-action")
+        self.preparar.connect("clicked", lambda *_: self.executar())
+        self.spinner = Gtk.Spinner()
+        botoes.pack_start(atualizar, False, False, 0)
+        botoes.pack_end(self.preparar, False, False, 0)
+        botoes.pack_end(self.spinner, False, False, 0)
+        caixa.pack_start(botoes, False, False, 0)
+        self.carregar()
+
+    def carregar(self):
+        self.loja.clear()
+        lista = discos()
+        for d in lista:
+            self.loja.append([d["caminho"], f"{d['modelo']} ({d['caminho']}){' — USB' if d['usb'] else ''}",
+                              ak.formatar_tamanho(d["tamanho"]), "Já preparado" if d["pronto"] else ""])
+        self.vazio.set_visible(not lista)
+
+    def executar(self):
+        modelo, it = self.tv.get_selection().get_selected()
+        if not it:
+            self.mensagem("Escolha um disco na lista.")
+            return
+        if not self.confirma.get_active():
+            self.mensagem("Marque a confirmação: o disco escolhido será apagado.")
+            return
+        disco = modelo[it][0]
+        self.preparar.set_sensitive(False)
+        self.spinner.start()
+
+        def trabalho():
+            cmd = ["sudo", "-n", AJUDANTE, disco]
+            if subprocess.run(["sudo", "-n", "true"], capture_output=True).returncode != 0:
+                cmd = ["pkexec", AJUDANTE, disco]
+            r = subprocess.run(cmd, capture_output=True, text=True)
+            GLib.idle_add(self.terminou, r.returncode, (r.stderr or r.stdout).strip())
+
+        threading.Thread(target=trabalho, daemon=True).start()
+
+    def terminou(self, codigo, texto):
+        self.spinner.stop()
+        self.preparar.set_sensitive(True)
+        if codigo == 0:
+            ak.tocar("notify")
+            self.mensagem("Disco preparado! Reinicie o computador e escolha no menu de boot "
+                          "“Usar sem instalar, guardando as alterações”.")
+        else:
+            ak.tocar("error")
+            self.mensagem(f"Não foi possível preparar o disco:\n{texto[-600:]}")
+        self.carregar()
+        return False
+
+    def mensagem(self, texto):
+        d = Gtk.MessageDialog(transient_for=self, modal=True, buttons=Gtk.ButtonsType.OK, text=texto)
+        d.run()
+        d.destroy()
+
+
+if __name__ == "__main__":
+    ak.aplicar_css("")
+    Gtk.Settings.get_default().set_property("gtk-application-prefer-dark-theme", True)
+    if not shutil.which("lsblk"):
+        sys.exit("lsblk não encontrado")
+    Janela().show_all()
+    Gtk.main()

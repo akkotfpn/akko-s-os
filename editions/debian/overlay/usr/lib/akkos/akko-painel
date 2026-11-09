@@ -67,8 +67,8 @@ CATEGORIAS = [
     ("Ferramentas", {"Utility", "Development", "FileManager", "TerminalEmulator"}),
     ("Sistema", {"System", "Settings", "Security", "Monitor"}),
 ]
-FAVORITOS = ["akko-arquivos.desktop", "akko-navegador.desktop", "xfce4-terminal.desktop",
-             "akko-rede.desktop", "org.xfce.mousepad.desktop"]
+FAVORITOS = ["akko-instalar.desktop", "akko-arquivos.desktop", "akko-navegador.desktop", "akko-tarefas.desktop",
+             "xfce4-terminal.desktop", "akko-rede.desktop", "org.xfce.mousepad.desktop"]
 
 
 def som_clique(*_):

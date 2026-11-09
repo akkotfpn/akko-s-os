@@ -37,13 +37,13 @@ def splash_grub(raiz, pal, inter, destino):
     fundo = fundo.resize((W, H), Image.LANCZOS)
     # escurece o centro pra o menu ficar legível
     veu = Image.new("L", (W, H), 0)
-    ImageDraw.Draw(veu).rounded_rectangle([W * 0.27, H * 0.47, W * 0.73, H * 0.83], radius=28, fill=150)
+    ImageDraw.Draw(veu).rounded_rectangle([W * 0.25, H * 0.42, W * 0.75, H * 0.84], radius=28, fill=150)
     veu = veu.filter(ImageFilter.GaussianBlur(30))
     fundo = Image.composite(Image.new("RGB", (W, H), rgb(pal["dark"]["background"])), fundo, veu)
     img = fundo.convert("RGBA")
     d = ImageDraw.Draw(img)
     # caixa do menu
-    d.rounded_rectangle([W * 0.28, H * 0.48, W * 0.72, H * 0.82], radius=22,
+    d.rounded_rectangle([W * 0.27, H * 0.43, W * 0.73, H * 0.83], radius=22,
                         fill=rgb(pal["dark"]["surface"]) + (235,), outline=rgb(pal["dark"]["surface_alt"]) + (255,), width=2)
     # logo e nome no topo
     logo = Image.open(os.path.join(raiz, "branding/out/akkos-logo-256.png")).convert("RGBA").resize((168, 168), Image.LANCZOS)

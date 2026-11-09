@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Guardar alterações (sem instalar)
+GenericName=Persistência do sistema live
+Comment=Prepara um disco ou pendrive para guardar seus arquivos e programas ao usar o Akko's OS sem instalar
+Exec=akko-persistencia
+TryExec=calamares
+Icon=drive-harddisk
+Terminal=false
+Categories=System;
+Keywords=persistência;guardar;salvar;pendrive;live;

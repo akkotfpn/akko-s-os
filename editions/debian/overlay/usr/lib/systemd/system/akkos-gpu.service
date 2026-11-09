@@ -1,0 +1,14 @@
+[Unit]
+Description=Akko's OS: escolhe o driver da placa NVIDIA (nvidia ou nouveau)
+DefaultDependencies=no
+After=systemd-udev-trigger.service systemd-modules-load.service
+Before=display-manager.service lightdm.service sysinit.target
+ConditionKernelCommandLine=!nomodeset
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/akkos/akkos-gpu
+
+[Install]
+WantedBy=sysinit.target

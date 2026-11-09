@@ -142,6 +142,10 @@ for s in 16 32 48 64 128 256 512; do
     install -Dm644 "$B/out/akkos-logo-$s.png" "$INC/usr/share/icons/hicolor/${s}x${s}/apps/akkos-logo.png"
 done
 install -Dm644 "$B/out/akkos-logo-256.png" "$INC/usr/share/pixmaps/akkos-logo.png"
+# fundo do GRUB do sistema instalado e imagens do instalador (Calamares)
+install -Dm644 "$B/out/akkos-wallpaper-dark.png" "$INC/usr/share/akkos/grub-fundo.png"
+install -Dm644 "$B/out/akkos-logo-256.png" "$INC/etc/calamares/branding/akkos/akkos-logo.png"
+install -Dm644 "$B/out/akkos-logo-512.png" "$INC/etc/calamares/branding/akkos/welcome.png"
 
 # ------------------------------------------------------------------ 5
 passo "5/7 Boot: tema do GRUB (BIOS + UEFI) e Plymouth"

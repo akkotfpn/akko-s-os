@@ -1,0 +1,35 @@
+#!/bin/sh
+# akko-persistencia-criar DISCO — prepara DISCO (inteiro) para guardar as
+# alterações do Akko's OS rodando sem instalar. APAGA TUDO no disco.
+# Chamado como administrador pelo akko-persistencia (que pede confirmação).
+set -eu
+DISCO=${1:-}
+[ -n "$DISCO" ] && [ -b "$DISCO" ] || { echo "disco inválido: $DISCO" >&2; exit 2; }
+[ "$(lsblk -dno TYPE "$DISCO")" = disk ] || { echo "$DISCO não é um disco inteiro" >&2; exit 2; }
+
+# nunca o disco de onde o sistema está rodando
+MIDIA=$(findmnt -no SOURCE /run/live/medium 2>/dev/null || true)
+if [ -n "$MIDIA" ]; then
+    PAI=$(lsblk -no PKNAME "$MIDIA" 2>/dev/null | head -1)
+    if [ "$MIDIA" = "$DISCO" ] || [ "/dev/$PAI" = "$DISCO" ]; then
+        echo "$DISCO é a mídia de onde o Akko's OS está rodando" >&2
+        exit 3
+    fi
+fi
+
+echo "desmontando partições de $DISCO"
+for p in $(lsblk -lnpo NAME "$DISCO" | tail -n +2); do umount "$p" 2>/dev/null || true; done
+echo "criando partição akkos-dados"
+wipefs -a "$DISCO" >/dev/null
+parted -s "$DISCO" mklabel gpt mkpart akkos-dados ext4 1MiB 100%
+udevadm settle
+PARTE=$(lsblk -lnpo NAME,TYPE "$DISCO" | awk '$2=="part"{print $1; exit}')
+[ -b "$PARTE" ] || { echo "partição não apareceu" >&2; exit 4; }
+mkfs.ext4 -F -q -L akkos-dados "$PARTE"
+PONTO=$(mktemp -d)
+mount "$PARTE" "$PONTO"
+echo "/ union" > "$PONTO/persistence.conf"
+sync
+umount "$PONTO"
+rmdir "$PONTO"
+echo "pronto: $PARTE"

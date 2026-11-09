@@ -1,0 +1,653 @@
+#!/usr/bin/python3
+"""
+akko-desktop — área de trabalho do Akko's OS: papel de parede + ícones.
+
+  * Ícones fixos como no Windows: Este Computador, Lixeira (cheia/vazia) e,
+    rodando sem instalar, "Instalar o Akko's OS"
+  * Tudo o que está na pasta Área de Trabalho aparece aqui (arquivos, pastas,
+    atalhos .desktop e atalhos criados pelo Arquivos); muda na hora
+  * Na primeira vez coloca atalhos: Navegador, Gerenciador de Tarefas, Terminal
+  * Botão direito no vazio: Novo ▸ Pasta / Documento de texto, Colar, Exibir,
+    Classificar, Atualizar, Abrir no Terminal, Papel de parede…, Tela…
+  * Botão direito num ícone: Abrir, Copiar, Recortar, Renomear, Excluir,
+    Abrir local; F2 renomeia, Delete manda para a Lixeira
+  * Arrastar arquivos para cá copia/move para a Área de Trabalho
+
+Papel de parede: ~/.config/akkos/papel-de-parede (caminho de uma imagem).
+"""
+
+import os
+import shutil
+import subprocess
+import sys
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+gi.require_version("GdkPixbuf", "2.0")
+from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango  # noqa: E402
+
+sys.path.insert(0, "/usr/lib/akkos/python")
+import akkos_comum as ak  # noqa: E402
+
+CONF = os.path.join(GLib.get_user_config_dir(), "akkos")
+ARQ_PAPEL = os.path.join(CONF, "papel-de-parede")
+ARQ_PREFS = os.path.join(CONF, "desktop.ini")
+MARCA_INICIO = os.path.join(CONF, "desktop-atalhos-criados")
+PAPEL_PADRAO = "/usr/share/backgrounds/akkos/akkos-wallpaper-dark.png"
+ALTURA_PAINEL = 44
+EH_LIVE = os.path.isdir("/run/live/medium")
+
+ATALHOS_INICIAIS = ["akko-navegador.desktop", "akko-tarefas.desktop", "xfce4-terminal.desktop"]
+
+CSS = """
+.mesa, .mesa flowbox { background-color: transparent; }
+.mesa flowboxchild { border-radius: 6px; padding: 4px; }
+.mesa flowboxchild:hover { background-color: alpha(white, 0.10); }
+.mesa flowboxchild:selected { background-color: alpha(@akk_indigo, 0.45); }
+.mesa .rotulo { color: white; text-shadow: 0 1px 3px alpha(black, 0.9), 0 0 2px black; }
+.mesa entry { min-height: 0; padding: 2px 4px; }
+"""
+
+
+def pasta_mesa():
+    d = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DESKTOP)
+    if not d or d == GLib.get_home_dir():
+        d = os.path.join(GLib.get_home_dir(), "Área de Trabalho")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def lixeira_cheia():
+    try:
+        info = Gio.File.new_for_uri("trash:///").query_info("trash::item-count", Gio.FileQueryInfoFlags.NONE, None)
+        return info.get_attribute_uint32("trash::item-count") > 0
+    except GLib.Error:
+        return False
+
+
+class Item(Gtk.FlowBoxChild):
+    """Um ícone da área de trabalho."""
+
+    def __init__(self, mesa, chave, nome, gicon, caminho=None, acao=None, virtual=False):
+        super().__init__()
+        self.mesa, self.chave, self.nome, self.caminho, self.acao, self.virtual = \
+            mesa, chave, nome, caminho, acao, virtual
+        caixa = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        caixa.set_size_request(mesa.tamanho + 40, -1)
+        self.img = Gtk.Image.new_from_gicon(gicon, Gtk.IconSize.DIALOG)
+        self.img.set_pixel_size(mesa.tamanho)
+        caixa.pack_start(self.img, False, False, 0)
+        self.rotulo = Gtk.Label(label=nome, justify=Gtk.Justification.CENTER, wrap=True,
+                                wrap_mode=Pango.WrapMode.WORD_CHAR, max_width_chars=12,
+                                lines=2, ellipsize=Pango.EllipsizeMode.END)
+        self.rotulo.get_style_context().add_class("rotulo")
+        self.pilha = Gtk.Stack()
+        self.pilha.add_named(self.rotulo, "rotulo")
+        self.campo = Gtk.Entry(width_chars=12, xalign=0.5)
+        self.campo.connect("activate", lambda *_: self.terminar_edicao(True))
+        self.campo.connect("focus-out-event", lambda *_: self.terminar_edicao(True) or False)
+        self.campo.connect("key-press-event", self._tecla_campo)
+        self.pilha.add_named(self.campo, "campo")
+        caixa.pack_start(self.pilha, False, False, 0)
+        self.add(caixa)
+        if caminho:
+            self.set_tooltip_text(caminho)
+        self.editando = False
+
+    def editar(self):
+        if self.virtual:
+            return
+        self.editando = True
+        self.campo.set_text(self.nome)
+        self.pilha.set_visible_child_name("campo")
+        self.campo.grab_focus()
+        base, _ext = os.path.splitext(self.nome)
+        fim = len(self.nome) if os.path.isdir(self.caminho) or not base else len(base)
+        self.campo.select_region(0, fim)
+
+    def _tecla_campo(self, _w, ev):
+        if ev.keyval == Gdk.KEY_Escape:
+            self.terminar_edicao(False)
+            return True
+        return False
+
+    def terminar_edicao(self, salvar):
+        if not self.editando:
+            return
+        self.editando = False
+        novo = self.campo.get_text().strip()
+        self.pilha.set_visible_child_name("rotulo")
+        if salvar and novo and novo != self.nome:
+            self.mesa.renomear(self, novo)
+
+
+class Mesa(Gtk.Window):
+    def __init__(self, app):
+        super().__init__(application=app, title="Área de Trabalho")
+        self.get_style_context().add_class("mesa")
+        self.set_type_hint(Gdk.WindowTypeHint.DESKTOP)
+        self.set_skip_taskbar_hint(True)
+        self.set_skip_pager_hint(True)
+        self.set_decorated(False)
+        self.set_keep_below(True)
+        self.set_app_paintable(True)
+        self.prefs = GLib.KeyFile()
+        try:
+            self.prefs.load_from_file(ARQ_PREFS, GLib.KeyFileFlags.NONE)
+        except GLib.Error:
+            pass
+        self.tamanho = self._pref_int("tamanho", 48)
+        self.ordem = self._pref_str("ordem", "nome")
+        self.mesa_dir = pasta_mesa()
+        self.papel = None
+        self.papel_escala = None
+        self.area_transf = ([], False)
+
+        tela = Gdk.Screen.get_default()
+        self.set_default_size(tela.get_width(), tela.get_height())
+        self.move(0, 0)
+        tela.connect("size-changed", self._tela_mudou)
+        tela.connect("monitors-changed", self._tela_mudou)
+
+        self.fluxo = Gtk.FlowBox(orientation=Gtk.Orientation.VERTICAL, homogeneous=True,
+                                 selection_mode=Gtk.SelectionMode.MULTIPLE, activate_on_single_click=False,
+                                 valign=Gtk.Align.FILL, halign=Gtk.Align.START, column_spacing=6, row_spacing=6,
+                                 max_children_per_line=30)
+        self.fluxo.set_margin_top(16)
+        self.fluxo.set_margin_start(16)
+        self.fluxo.set_margin_bottom(ALTURA_PAINEL + 16)
+        self.fluxo.connect("child-activated", lambda _f, item: self.abrir(item))
+        self.fluxo.set_sort_func(self._ordenar)
+        caixa = Gtk.EventBox(visible_window=False)
+        caixa.add(self.fluxo)
+        caixa.connect("button-press-event", self._clique)
+        self.add(caixa)
+
+        self.connect("draw", self._desenhar)
+        self.connect("key-press-event", self._tecla)
+        alvos = [Gtk.TargetEntry.new("text/uri-list", 0, 0)]
+        self.drag_dest_set(Gtk.DestDefaults.ALL, alvos, Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
+        self.connect("drag-data-received", self._soltar)
+
+        self._carregar_papel()
+        self._atalhos_iniciais()
+        self.recarregar()
+        self.monitor = Gio.File.new_for_path(self.mesa_dir).monitor_directory(Gio.FileMonitorFlags.WATCH_MOVES, None)
+        self.monitor.set_rate_limit(400)
+        self.monitor.connect("changed", lambda *_: self._agendar_recarga())
+        try:
+            self.mon_lixeira = Gio.File.new_for_uri("trash:///").monitor_directory(Gio.FileMonitorFlags.NONE, None)
+            self.mon_lixeira.connect("changed", lambda *_: self._agendar_recarga())
+        except GLib.Error:
+            self.mon_lixeira = None
+
+    # ---------------------------------------------------------------- preferências
+
+    def _pref_int(self, chave, padrao):
+        try:
+            return self.prefs.get_integer("mesa", chave)
+        except GLib.Error:
+            return padrao
+
+    def _pref_str(self, chave, padrao):
+        try:
+            return self.prefs.get_string("mesa", chave)
+        except GLib.Error:
+            return padrao
+
+    def _salvar_prefs(self):
+        self.prefs.set_integer("mesa", "tamanho", self.tamanho)
+        self.prefs.set_string("mesa", "ordem", self.ordem)
+        os.makedirs(CONF, exist_ok=True)
+        try:
+            self.prefs.save_to_file(ARQ_PREFS)
+        except GLib.Error:
+            pass
+
+    # ---------------------------------------------------------------- papel de parede
+
+    def _carregar_papel(self):
+        caminho = PAPEL_PADRAO
+        try:
+            with open(ARQ_PAPEL) as f:
+                c = f.read().strip()
+                if c and os.path.isfile(c):
+                    caminho = c
+        except OSError:
+            pass
+        try:
+            self.papel = GdkPixbuf.Pixbuf.new_from_file(caminho)
+        except GLib.Error:
+            self.papel = None
+        self.papel_escala = None
+        self.queue_draw()
+
+    def _desenhar(self, widget, cr):
+        w, h = widget.get_allocated_width(), widget.get_allocated_height()
+        if self.papel is None:
+            cr.set_source_rgb(0.07, 0.04, 0.05)
+            cr.paint()
+            return False
+        if self.papel_escala is None or self.papel_escala[0] != (w, h):
+            pw, ph = self.papel.get_width(), self.papel.get_height()
+            escala = max(w / pw, h / ph)   # cobre a tela sem distorcer
+            nw, nh = max(1, int(pw * escala)), max(1, int(ph * escala))
+            self.papel_escala = ((w, h), self.papel.scale_simple(nw, nh, GdkPixbuf.InterpType.BILINEAR),
+                                 (w - nw) // 2, (h - nh) // 2)
+        _tam, pix, x, y = self.papel_escala
+        Gdk.cairo_set_source_pixbuf(cr, pix, x, y)
+        cr.paint()
+        return False
+
+    def _tela_mudou(self, tela):
+        self.resize(tela.get_width(), tela.get_height())
+        self.papel_escala = None
+        self.queue_draw()
+
+    def escolher_papel(self):
+        d = Gtk.FileChooserDialog(title="Escolher papel de parede", transient_for=self,
+                                  action=Gtk.FileChooserAction.OPEN)
+        d.add_button("Cancelar", Gtk.ResponseType.CANCEL)
+        d.add_button("Usar", Gtk.ResponseType.OK).get_style_context().add_class("suggested-action")
+        filtro = Gtk.FileFilter()
+        filtro.set_name("Imagens")
+        filtro.add_mime_type("image/*")
+        d.add_filter(filtro)
+        d.set_current_folder("/usr/share/backgrounds/akkos")
+        imagens = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_PICTURES)
+        if imagens and os.path.isdir(imagens):
+            d.add_shortcut_folder(imagens)
+        previa = Gtk.Image()
+        d.set_preview_widget(previa)
+
+        def atualizar_previa(dlg):
+            arq = dlg.get_preview_filename()
+            try:
+                previa.set_from_pixbuf(GdkPixbuf.Pixbuf.new_from_file_at_scale(arq, 240, 240, True))
+                dlg.set_preview_widget_active(True)
+            except (GLib.Error, TypeError):
+                dlg.set_preview_widget_active(False)
+        d.connect("update-preview", atualizar_previa)
+        if d.run() == Gtk.ResponseType.OK and d.get_filename():
+            os.makedirs(CONF, exist_ok=True)
+            with open(ARQ_PAPEL, "w") as f:
+                f.write(d.get_filename() + "\n")
+            self._carregar_papel()
+        d.destroy()
+
+    # ---------------------------------------------------------------- itens
+
+    def _atalhos_iniciais(self):
+        if os.path.exists(MARCA_INICIO):
+            return
+        for nome in ATALHOS_INICIAIS:
+            for base in ("/usr/share/applications", "/usr/local/share/applications"):
+                origem = os.path.join(base, nome)
+                if os.path.isfile(origem):
+                    destino = os.path.join(self.mesa_dir, nome)
+                    if not os.path.exists(destino):
+                        try:
+                            shutil.copy(origem, destino)
+                            os.chmod(destino, 0o755)
+                        except OSError:
+                            pass
+                    break
+        os.makedirs(CONF, exist_ok=True)
+        open(MARCA_INICIO, "w").close()
+
+    def _agendar_recarga(self):
+        if not hasattr(self, "_recarga"):
+            self._recarga = GLib.timeout_add(300, self._recarregar_agendado)
+
+    def _recarregar_agendado(self):
+        del self._recarga
+        if not any(getattr(c, "editando", False) for c in self.fluxo.get_children()):
+            self.recarregar()
+        return False
+
+    def recarregar(self, selecionar=None, editar=None):
+        for c in self.fluxo.get_children():
+            self.fluxo.remove(c)
+        self.fluxo.add(Item(self, "0-pc", "Este Computador", Gio.ThemedIcon.new("computer"),
+                            acao=lambda: ak.executar_destacado(["akko-arquivos", "computador://"]), virtual=True))
+        self.fluxo.add(Item(self, "0-lixeira", "Lixeira",
+                            Gio.ThemedIcon.new("user-trash-full" if lixeira_cheia() else "user-trash"),
+                            acao=lambda: ak.executar_destacado(["akko-arquivos", "trash:///"]), virtual=True))
+        if EH_LIVE and shutil.which("akko-instalar"):
+            self.fluxo.add(Item(self, "0-instalar", "Instalar o Akko's OS", Gio.ThemedIcon.new("akkos-logo"),
+                                acao=lambda: ak.executar_destacado(["akko-instalar"]), virtual=True))
+        alvo_editar = None
+        try:
+            nomes = os.listdir(self.mesa_dir)
+        except OSError:
+            nomes = []
+        for nome in nomes:
+            if nome.startswith("."):
+                continue
+            caminho = os.path.join(self.mesa_dir, nome)
+            gfile = Gio.File.new_for_path(caminho)
+            rotulo, gicon = nome, None
+            if nome.endswith(".desktop"):
+                app = Gio.DesktopAppInfo.new_from_filename(caminho)
+                if app:
+                    rotulo, gicon = app.get_display_name(), app.get_icon()
+            if gicon is None:
+                try:
+                    info = gfile.query_info("standard::icon,standard::display-name", Gio.FileQueryInfoFlags.NONE, None)
+                    gicon = info.get_icon()
+                except GLib.Error:
+                    gicon = Gio.ThemedIcon.new("text-x-generic")
+                if nome.lower().endswith((".png", ".jpg", ".jpeg", ".webp")) and os.path.getsize(caminho) < 20 << 20:
+                    try:
+                        gicon = GdkPixbuf.Pixbuf.new_from_file_at_scale(caminho, self.tamanho, self.tamanho, True)
+                    except GLib.Error:
+                        pass
+            item = Item(self, "1-" + nome, rotulo, gicon if isinstance(gicon, Gio.Icon) else Gio.ThemedIcon.new("image-x-generic"),
+                        caminho=caminho)
+            if isinstance(gicon, GdkPixbuf.Pixbuf):
+                item.img.set_from_pixbuf(gicon)
+            if os.path.islink(caminho):
+                item.set_tooltip_text(f"Atalho para {os.readlink(caminho)}")
+            self.fluxo.add(item)
+            if selecionar and caminho == selecionar:
+                self.fluxo.select_child(item)
+            if editar and caminho == editar:
+                alvo_editar = item
+        self.fluxo.show_all()
+        self.fluxo.invalidate_sort()
+        if alvo_editar:
+            self.fluxo.select_child(alvo_editar)
+            GLib.idle_add(lambda: alvo_editar.editar() or False)
+
+    def _ordenar(self, a, b):
+        if a.chave[0] != b.chave[0]:
+            return -1 if a.chave < b.chave else 1
+        if a.virtual:
+            return 0
+        if self.ordem == "nome":
+            ka, kb = a.nome.casefold(), b.nome.casefold()
+        elif self.ordem == "tipo":
+            ka, kb = (os.path.splitext(a.nome)[1].casefold(), a.nome.casefold()), \
+                (os.path.splitext(b.nome)[1].casefold(), b.nome.casefold())
+        else:
+            try:
+                ka, kb = -os.lstat(a.caminho).st_mtime, -os.lstat(b.caminho).st_mtime
+            except OSError:
+                ka = kb = 0
+        da, db = os.path.isdir(a.caminho or ""), os.path.isdir(b.caminho or "")
+        if da != db:
+            return -1 if da else 1
+        return (ka > kb) - (ka < kb)
+
+    def selecionados(self):
+        return [c for c in self.fluxo.get_selected_children()]
+
+    # ---------------------------------------------------------------- ações
+
+    def abrir(self, item):
+        ak.tocar("click")
+        if item.acao:
+            item.acao()
+            return
+        c = item.caminho
+        if c.endswith(".desktop"):
+            app = Gio.DesktopAppInfo.new_from_filename(c)
+            if app:
+                try:
+                    app.launch([], Gdk.Display.get_default().get_app_launch_context())
+                except GLib.Error as erro:
+                    self.aviso(erro.message)
+                return
+        alvo = os.path.realpath(c)
+        if os.path.isdir(alvo) or alvo.lower().endswith((".exe", ".msi", ".bat", ".appimage", ".deb", ".flatpakref")):
+            # o Arquivos sabe abrir pastas e programas (com as confirmações certas)
+            if os.path.isdir(alvo):
+                ak.executar_destacado(["akko-arquivos", alvo])
+            else:
+                ak.executar_destacado(["win-launcher", alvo] if alvo.lower().endswith((".exe", ".msi", ".bat"))
+                                      else ["akko-arquivos", os.path.dirname(alvo)], cwd=os.path.dirname(alvo))
+            return
+        try:
+            Gio.AppInfo.launch_default_for_uri(Gio.File.new_for_path(alvo).get_uri(),
+                                               Gdk.Display.get_default().get_app_launch_context())
+        except GLib.Error as erro:
+            self.aviso(erro.message)
+
+    def aviso(self, texto):
+        ak.tocar("error")
+        subprocess.Popen(["notify-send", "-a", "Área de Trabalho", "-i", "dialog-warning", "Área de Trabalho", texto])
+
+    def _nome_livre(self, nome):
+        alvo = os.path.join(self.mesa_dir, nome)
+        base, ext = os.path.splitext(nome)
+        n = 2
+        while os.path.lexists(alvo):
+            alvo = os.path.join(self.mesa_dir, f"{base} ({n}){ext}")
+            n += 1
+        return alvo
+
+    def nova_pasta(self):
+        caminho = self._nome_livre("Nova pasta")
+        try:
+            os.mkdir(caminho)
+        except OSError as erro:
+            self.aviso(f"Não foi possível criar a pasta: {erro.strerror}")
+            return
+        ak.tocar("click")
+        self.recarregar(editar=caminho)
+
+    def novo_texto(self):
+        caminho = self._nome_livre("Novo documento de texto.txt")
+        try:
+            open(caminho, "x").close()
+        except OSError as erro:
+            self.aviso(f"Não foi possível criar o arquivo: {erro.strerror}")
+            return
+        self.recarregar(editar=caminho)
+
+    def renomear(self, item, novo):
+        if "/" in novo:
+            self.aviso("O nome não pode conter “/”.")
+            return
+        destino = os.path.join(self.mesa_dir, novo)
+        if os.path.lexists(destino):
+            self.aviso(f"Já existe “{novo}” na Área de Trabalho.")
+            return
+        try:
+            os.rename(item.caminho, destino)
+        except OSError as erro:
+            self.aviso(f"Não foi possível renomear: {erro.strerror}")
+            return
+        self.recarregar(selecionar=destino)
+
+    def excluir(self):
+        itens = [i for i in self.selecionados() if not i.virtual]
+        for i in itens:
+            try:
+                Gio.File.new_for_path(i.caminho).trash(None)
+            except GLib.Error as erro:
+                self.aviso(f"Não foi possível excluir {i.nome}: {erro.message}")
+        if itens:
+            ak.tocar("click")
+            self.recarregar()
+
+    def copiar(self, recortar):
+        itens = [i.caminho for i in self.selecionados() if not i.virtual]
+        if itens:
+            self.area_transf = (itens, recortar)
+            Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text("\n".join(itens), -1)
+
+    def colar(self):
+        origens, recortar = self.area_transf
+        if not origens:
+            texto = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).wait_for_text() or ""
+            origens = [l.strip() for l in texto.splitlines() if l.strip().startswith("/") and os.path.exists(l.strip())]
+            recortar = False
+        self._trazer(origens, recortar)
+        if recortar:
+            self.area_transf = ([], False)
+
+    def _trazer(self, origens, mover):
+        for o in origens:
+            if os.path.dirname(os.path.abspath(o)) == self.mesa_dir:
+                continue
+            destino = self._nome_livre(os.path.basename(o.rstrip("/")))
+            try:
+                if mover:
+                    shutil.move(o, destino)
+                elif os.path.isdir(o):
+                    shutil.copytree(o, destino, symlinks=True)
+                else:
+                    shutil.copy2(o, destino)
+            except OSError as erro:
+                self.aviso(f"Falha com {os.path.basename(o)}: {erro.strerror or erro}")
+        self.recarregar()
+
+    def _soltar(self, _w, ctx, _x, _y, dados, _info, tempo):
+        origens = [Gio.File.new_for_uri(u).get_path() for u in (dados.get_uris() or [])]
+        origens = [o for o in origens if o]
+        teclado = Gdk.Keymap.get_for_display(Gdk.Display.get_default()).get_modifier_state()
+        mover = bool(teclado & Gdk.ModifierType.SHIFT_MASK)
+        if not teclado & (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SHIFT_MASK):
+            try:
+                dev = os.stat(self.mesa_dir).st_dev
+                mover = all(os.stat(o).st_dev == dev for o in origens)
+            except OSError:
+                mover = False
+        self._trazer(origens, mover)
+        Gtk.drag_finish(ctx, bool(origens), False, tempo)
+
+    # ---------------------------------------------------------------- mouse e teclado
+
+    def _tecla(self, _w, ev):
+        if any(getattr(c, "editando", False) for c in self.fluxo.get_children()):
+            return False
+        ctrl = ev.state & Gdk.ModifierType.CONTROL_MASK
+        sel = self.selecionados()
+        if ev.keyval == Gdk.KEY_F2 and len(sel) == 1:
+            sel[0].editar()
+        elif ev.keyval == Gdk.KEY_Delete:
+            self.excluir()
+        elif ev.keyval == Gdk.KEY_F5:
+            self.recarregar()
+        elif ctrl and ev.keyval == Gdk.KEY_c:
+            self.copiar(False)
+        elif ctrl and ev.keyval == Gdk.KEY_x:
+            self.copiar(True)
+        elif ctrl and ev.keyval == Gdk.KEY_v:
+            self.colar()
+        elif ctrl and ev.keyval == Gdk.KEY_a:
+            self.fluxo.select_all()
+        elif ctrl and ev.state & Gdk.ModifierType.SHIFT_MASK and ev.keyval in (Gdk.KEY_N, Gdk.KEY_n):
+            self.nova_pasta()
+        else:
+            return False
+        return True
+
+    def _clique(self, _w, ev):
+        if ev.type != Gdk.EventType.BUTTON_PRESS:
+            return False
+        filho = self.fluxo.get_child_at_pos(int(ev.x - self.fluxo.get_margin_start()),
+                                            int(ev.y - self.fluxo.get_margin_top()))
+        if ev.button == 1 and filho is None:
+            self.fluxo.unselect_all()
+            self.grab_focus()
+            return False
+        if ev.button != 3:
+            return False
+        if filho is not None and not filho.is_selected():
+            self.fluxo.unselect_all()
+            self.fluxo.select_child(filho)
+        elif filho is None:
+            self.fluxo.unselect_all()
+        self._menu(ev, filho)
+        return True
+
+    def _menu(self, ev, filho):
+        menu = Gtk.Menu()
+
+        def item(rotulo, func, ativo=True, sub=None):
+            mi = Gtk.MenuItem(label=rotulo)
+            if sub is not None:
+                mi.set_submenu(sub)
+            else:
+                mi.connect("activate", lambda *_: func())
+            mi.set_sensitive(ativo)
+            return mi
+
+        def submenu(itens):
+            m = Gtk.Menu()
+            for i in itens:
+                m.append(i)
+            return m
+
+        if filho is not None:
+            sel = self.selecionados()
+            reais = [i for i in sel if not i.virtual]
+            menu.append(item("Abrir", lambda: [self.abrir(i) for i in sel]))
+            if len(reais) == 1:
+                menu.append(item("Abrir local do arquivo",
+                                 lambda: ak.executar_destacado(["akko-arquivos", self.mesa_dir])))
+            if filho.chave == "0-lixeira":
+                menu.append(item("Esvaziar Lixeira",
+                                 lambda: ak.executar_destacado(["akko-arquivos", "trash:///"])))
+            menu.append(Gtk.SeparatorMenuItem())
+            menu.append(item("Recortar", lambda: self.copiar(True), bool(reais)))
+            menu.append(item("Copiar", lambda: self.copiar(False), bool(reais)))
+            menu.append(item("Renomear", lambda: reais[0].editar(), len(reais) == 1))
+            menu.append(item("Excluir", self.excluir, bool(reais)))
+        else:
+            exibir = submenu([item("Ícones grandes", lambda: self._tamanho(64)),
+                              item("Ícones médios", lambda: self._tamanho(48)),
+                              item("Ícones pequenos", lambda: self._tamanho(32))])
+            ordem = submenu([item("Nome", lambda: self._ordem("nome")),
+                             item("Tipo", lambda: self._ordem("tipo")),
+                             item("Data de modificação", lambda: self._ordem("data"))])
+            novo = submenu([item("Pasta", self.nova_pasta), Gtk.SeparatorMenuItem(),
+                            item("Documento de texto", self.novo_texto)])
+            menu.append(item("Exibir", None, sub=exibir))
+            menu.append(item("Classificar por", None, sub=ordem))
+            menu.append(item("Atualizar", self.recarregar))
+            menu.append(Gtk.SeparatorMenuItem())
+            menu.append(item("Colar", self.colar))
+            menu.append(item("Novo", None, sub=novo))
+            menu.append(Gtk.SeparatorMenuItem())
+            menu.append(item("Abrir no Terminal",
+                             lambda: ak.executar_destacado(["xfce4-terminal", "--working-directory", self.mesa_dir])))
+            menu.append(item("Gerenciador de Tarefas", lambda: ak.executar_destacado(["akko-tarefas"])))
+            menu.append(Gtk.SeparatorMenuItem())
+            menu.append(item("Papel de parede…", self.escolher_papel))
+            menu.append(item("Configurações de tela…", lambda: ak.executar_destacado(["arandr"])))
+        menu.show_all()
+        menu.attach_to_widget(self, None)
+        menu.popup_at_pointer(ev)
+
+    def _tamanho(self, t):
+        self.tamanho = t
+        self._salvar_prefs()
+        self.recarregar()
+
+    def _ordem(self, o):
+        self.ordem = o
+        self._salvar_prefs()
+        self.fluxo.invalidate_sort()
+
+
+class App(Gtk.Application):
+    def __init__(self):
+        super().__init__(application_id="org.akkos.Mesa", flags=Gio.ApplicationFlags.FLAGS_NONE)
+        self.mesa = None
+
+    def do_activate(self):
+        if self.mesa is None:
+            ak.aplicar_css(CSS)
+            self.mesa = Mesa(self)
+            self.mesa.show_all()
+        else:
+            self.mesa.recarregar()
+
+
+if __name__ == "__main__":
+    sys.exit(App().run(sys.argv))

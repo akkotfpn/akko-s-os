@@ -138,3 +138,26 @@ apparmor-profiles-extra
 firejail
 bubblewrap
 firejail-profiles
+
+## Vídeo: Mesa (atualizado do backports no hook 0100), firmwares, VA-API
+firmware-amd-graphics
+firmware-intel-graphics
+intel-media-va-driver-non-free
+mesa-va-drivers
+mesa-utils
+pciutils
+
+## Programas próprios: Gerenciador de Tarefas
+python3-psutil
+
+## Instalador (Calamares) e "guardar alterações" (persistência)
+calamares
+calamares-settings-debian
+parted
+efibootmgr
+os-prober
+cryptsetup
+e2fsprogs
+
+## Memória: swap comprimida em RAM (mais espaço no modo sem instalar)
+zram-tools

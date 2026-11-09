@@ -10,7 +10,7 @@
     padding = 12
     horizontal_padding = 14
     frame_width = 1
-    frame_color = "#1C2440"
+    frame_color = "#2B171E"
     separator_color = frame
     corner_radius = 12
     font = Inter 10
@@ -26,21 +26,21 @@
     mouse_right_click = close_all
     progress_bar_frame_width = 0
     progress_bar_corner_radius = 3
-    highlight = "#22D3EE"
+    highlight = "#FF7A59"
 
 [urgency_low]
-    background = "#0B1020"
-    foreground = "#8B93AD"
+    background = "#120A0D"
+    foreground = "#B3959C"
     timeout = 4
 
 [urgency_normal]
-    background = "#141A2E"
-    foreground = "#E6E9F2"
+    background = "#1C1115"
+    foreground = "#F5E9EB"
     timeout = 7
 
 [urgency_critical]
-    background = "#141A2E"
-    foreground = "#E6E9F2"
+    background = "#1C1115"
+    foreground = "#F5E9EB"
     frame_color = "#EF4444"
     timeout = 0
 

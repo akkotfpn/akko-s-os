@@ -1,11 +1,11 @@
 # Akko's OS — tema do GRUB (cores de branding/palette.json)
 desktop-image: "../splash.png"
 desktop-image-scale-method: "stretch"
-desktop-color: "#0B1020"
+desktop-color: "#120A0D"
 title-text: ""
 message-font: "DejaVu Sans Regular 16"
-message-color: "#E6E9F2"
-message-bg-color: "#0B1020"
+message-color: "#F5E9EB"
+message-bg-color: "#120A0D"
 terminal-font: "DejaVu Sans Regular 16"
 terminal-left: "10%"
 terminal-top: "10%"
@@ -13,17 +13,17 @@ terminal-width: "80%"
 terminal-height: "80%"
 
 + boot_menu {
-        left = 30%
-        width = 40%
-        top = 51%
-        height = 29%
+        left = 28%
+        width = 44%
+        top = 45%
+        height = 36%
         item_font = "DejaVu Sans Regular 20"
         selected_item_font = "DejaVu Sans Bold 20"
-        item_color = "#B4BBD0"
+        item_color = "#D9C2C7"
         selected_item_color = "#FFFFFF"
-        item_height = 44
-        item_padding = 16
-        item_spacing = 6
+        item_height = 38
+        item_padding = 14
+        item_spacing = 4
         icon_width = 0
         icon_height = 0
         item_icon_space = 0
@@ -33,15 +33,15 @@ terminal-height: "80%"
 
 + progress_bar {
         id = "__timeout__"
-        left = 30%
-        width = 40%
-        top = 85%
+        left = 28%
+        width = 44%
+        top = 86%
         height = 26
         font = "DejaVu Sans Regular 16"
-        text_color = "#E6E9F2"
-        fg_color = "#22D3EE"
-        bg_color = "#1C2440"
-        border_color = "#1C2440"
+        text_color = "#F5E9EB"
+        fg_color = "#FF7A59"
+        bg_color = "#2B171E"
+        border_color = "#2B171E"
         text = "@TIMEOUT_NOTIFICATION_LONG@"
 }
 
@@ -52,6 +52,6 @@ terminal-height: "80%"
         height = 20
         text = "↑ ↓ escolher    Enter iniciar    e editar    c linha de comando"
         align = "center"
-        color = "#8B93AD"
+        color = "#B3959C"
         font = "DejaVu Sans Regular 16"
 }
