@@ -55,6 +55,28 @@ def css_base():
     .akkos-titulo {{ font-size: 15pt; font-weight: 700; }}
     .akkos-erro {{ color: @akk_err; }}
     .akkos-ok {{ color: @akk_ok; }}
+    /* tema escuro garantido mesmo se o GTK estiver com tema claro */
+    .akkos label {{ color: @akk_text; }}
+    .akkos label:disabled {{ color: alpha(@akk_text, 0.45); }}
+    .akkos .view, .akkos iconview, .akkos treeview.view, .akkos list, .akkos list row {{ color: @akk_text; }}
+    .akkos list {{ background-color: transparent; }}
+    .akkos treeview.view header button {{
+        background-image: none; background-color: @akk_surface; color: @akk_muted;
+        border-color: @akk_surface_alt; box-shadow: none; text-shadow: none;
+    }}
+    .akkos entry {{ background-image: none; background-color: @akk_surface; color: @akk_text; border-color: @akk_surface_alt; }}
+    .akkos button {{
+        background-image: none; background-color: @akk_surface_alt; color: @akk_text;
+        border-color: shade(@akk_surface_alt, 1.3); box-shadow: none; text-shadow: none;
+    }}
+    .akkos button:hover {{ background-color: shade(@akk_surface_alt, 1.3); }}
+    .akkos button:disabled {{ background-color: @akk_surface; color: alpha(@akk_text, 0.4); }}
+    .akkos button:disabled label {{ color: alpha(@akk_text, 0.4); }}
+    .akkos button.destructive-action {{ background-color: @akk_indigo; color: #ffffff; }}
+    .akkos infobar {{ background-color: @akk_surface_alt; }}
+    .akkos infobar label {{ color: @akk_text; }}
+    .akkos .akkos-muted, .akkos label.akkos-muted {{ color: @akk_muted; }}
+
     button.akkos-primario {{
         background-image: linear-gradient(90deg, @akk_cyan, @akk_indigo);
         color: #ffffff; border: none; border-radius: 8px; font-weight: 700;
@@ -77,6 +99,8 @@ def aplicar_css(extra=""):
     prov.load_from_data((css_base() + extra).encode())
     Gtk.StyleContext.add_provider_for_screen(
         Gdk.Screen.get_default(), prov, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+    # janelas, menus e diálogos sempre no tema escuro (o CSS acima completa)
+    Gtk.Settings.get_default().set_property("gtk-application-prefer-dark-theme", True)
 
 
 def _socket_sons():

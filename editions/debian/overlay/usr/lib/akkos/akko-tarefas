@@ -286,6 +286,7 @@ class Janela(Gtk.ApplicationWindow):
             linha.add(caixa)
             lateral.add(linha)
             self.paginas.add_named(construtor(), chave)
+        self.paginas.show_all()   # o Gtk.Stack só troca para páginas já mostradas
         lateral.connect("row-selected", self._trocar_pagina)
         self.lateral = lateral
         inicial = 0

@@ -554,6 +554,9 @@ class Janela(Gtk.ApplicationWindow):
         rodape.pack_end(self.progresso_barra, False, False, 0)
         corpo.pack_end(rodape, False, False, 0)
 
+        # o Gtk.Stack só troca para páginas já mostradas: mostra todas antes de navegar
+        self.pilha.show_all()
+        self.endereco_pilha.show_all()
         self.pilha.set_visible_child_name("grade")
         self._carregar_prefs()
 

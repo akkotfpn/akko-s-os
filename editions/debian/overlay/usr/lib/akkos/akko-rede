@@ -31,7 +31,7 @@ CSS = """
 .rede-linha { padding: 8px 10px; border-radius: 8px; }
 list { background: transparent; }
 row:hover .rede-linha { background-color: @akk_surface_alt; }
-.conectada { color: @akk_cyan; font-weight: 700; }
+.akkos .conectada, .akkos label.conectada { color: @akk_cyan; font-weight: 700; }
 .estado-grande { font-size: 16pt; font-weight: 700; }
 """
 
