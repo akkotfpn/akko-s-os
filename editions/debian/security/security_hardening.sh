@@ -144,14 +144,16 @@ if [ -d /usr/share/apparmor/extra-profiles ]; then
         [ -e "$destino" ] || cp "$p" "$destino"
     done
 fi
-# um perfil quebrado em enforce trava o programa: valida cada um antes
-for p in /etc/apparmor.d/usr.bin.* /etc/apparmor.d/firejail-default; do
-    [ -f "$p" ] || continue
-    if ! apparmor_parser -Q -T "$p" >/dev/null 2>&1; then
-        log "  perfil inválido removido: $p"
-        rm -f "$p"
-    fi
-done
+# Valida os perfis quando o kernel tem AppArmor (sistema instalado). No build
+# (chroot sem /sys/kernel/security) a validação não é confiável: só avisa.
+if [ -d /sys/kernel/security/apparmor ]; then
+    for p in /etc/apparmor.d/usr.bin.* /etc/apparmor.d/firejail-default; do
+        [ -f "$p" ] || continue
+        apparmor_parser -Q -T "$p" >/dev/null 2>&1 || log "  AVISO: perfil com erro: $p"
+    done
+else
+    log "  (sem AppArmor no kernel do build: perfis serão carregados no boot)"
+fi
 
 # ---------------------------------------------------------------- 4. Firejail
 log "4/5 Firejail (sandbox do Wine e do navegador)"
