@@ -4,6 +4,7 @@
 Description=Akko's OS: verificação automatizada (somente CI)
 ConditionKernelCommandLine=akkos.teste=1
 After=graphical.target lightdm.service NetworkManager.service
+Conflicts=serial-getty@ttyS0.service
 Wants=graphical.target
 
 [Service]
