@@ -79,8 +79,9 @@ else
     : > "$TMP.lista"
     for n in 0 1 2 3 4 5 6 7 8 9; do
         parte="$ISO_NOME.part$n"
-        codigo=$(curl -sIL -o /dev/null -w '%{http_code}' "$BASE/$parte")
-        [ "$codigo" = 200 ] || break
+        # o servidor de downloads do GitHub recusa HEAD (401): testa com 1 byte
+        codigo=$(curl -sL -r 0-0 -o /dev/null -w '%{http_code}' "$BASE/$parte")
+        case "$codigo" in 200|206) ;; *) break ;; esac
         echo "  parte $n"
         curl -fL --retry 5 --retry-delay 3 -C - --progress-bar -o "$TMP.$n" "$BASE/$parte"
         echo "$TMP.$n" >> "$TMP.lista"
