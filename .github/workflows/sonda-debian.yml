@@ -28,14 +28,10 @@ jobs:
           EOT
             dpkg --add-architecture i386
             apt-get update -qq
-            P="linux-image-amd64 linux-headers-amd64 nvidia-driver nvidia-kernel-dkms nvidia-open-kernel-dkms nvidia-tesla-470-driver nvidia-driver-libs nvidia-vulkan-icd firmware-nvidia-gsp firmware-amd-graphics firmware-intel-graphics firmware-misc-nonfree mesa-vulkan-drivers libgl1-mesa-dri intel-media-va-driver-non-free mesa-va-drivers calamares calamares-settings-debian python3-psutil nvidia-detect vulkan-tools mesa-utils xserver-xorg-video-nvidia nvidia-settings libnvidia-gl i965-va-driver"
-            for p in $P; do echo "## $p"; apt-cache policy $p | sed -n "2,3p;/trixie/p" | head -8; done > /saida/versoes.txt 2>&1
-            apt-cache policy "nvidia-driver:i386" "nvidia-driver-libs:i386" >> /saida/versoes.txt
-            apt-cache search --names-only "^nvidia" | sort > /saida/nvidia-pacotes.txt
-            apt-cache search --names-only "^linux-image-[0-9]" | sort > /saida/kernels.txt
-            apt-get install -y -qq calamares calamares-settings-debian >/dev/null 2>&1
-            { find /etc/calamares /usr/share/calamares -type f | sort; for f in /etc/calamares/settings.conf /etc/calamares/branding/*/branding.desc /etc/calamares/modules/*.conf; do echo "##### $f"; cat "$f"; done; ls /usr/lib/calamares/modules 2>/dev/null; ls /usr/lib/x86_64-linux-gnu/calamares/modules; dpkg -L calamares-settings-debian; } > /saida/calamares.txt 2>&1
-            apt-get install -y -qq -t trixie-backports nvidia-kernel-dkms linux-headers-amd64 >/dev/null 2>&1; echo "rc=$?" > /saida/nvidia-bpo.txt; dkms status >> /saida/nvidia-bpo.txt 2>&1
+            for p in linux-image-amd64 linux-headers-amd64 nvidia-driver nvidia-kernel-dkms nvidia-open-kernel-dkms firmware-nvidia-gsp mesa-vulkan-drivers libgl1-mesa-dri firmware-amd-graphics firmware-intel-graphics firmware-misc-nonfree xe-firmware intel-microcode amd64-microcode; do echo "## $p"; apt-cache madison $p | sed -n "1,4p"; done > /saida/madison.txt 2>&1
+            apt-get install -y -qq -t trixie-backports linux-image-amd64 linux-headers-amd64 > /saida/kernel-bpo.txt 2>&1; echo "rc=$?" >> /saida/kernel-bpo.txt; ls /lib/modules /usr/src >> /saida/kernel-bpo.txt
+            apt-get install -y -qq nvidia-kernel-dkms > /saida/nv-stable.txt 2>&1; echo "rc=$?" >> /saida/nv-stable.txt; dkms status >> /saida/nv-stable.txt 2>&1; tail -40 /var/lib/dkms/nvidia-current/*/build/make.log >> /saida/nv-stable.txt 2>&1
+            apt-get install -y -qq -t trixie-backports nvidia-kernel-dkms > /saida/nv-bpo.txt 2>&1; echo "rc=$?" >> /saida/nv-bpo.txt; dkms status >> /saida/nv-bpo.txt 2>&1; tail -30 /var/lib/dkms/nvidia-current/*/build/make.log >> /saida/nv-bpo.txt 2>&1
           '
           ls -la saida
       - name: Publicar no branch sonda-saida
