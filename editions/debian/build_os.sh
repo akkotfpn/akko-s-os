@@ -62,7 +62,7 @@ if [ -d config ]; then
     lb clean --purge >/dev/null 2>&1 || true
     rm -rf config
 fi
-APPEND="boot=live components quiet splash username=akko user-fullname=Akko hostname=akkos"
+APPEND="boot=live components quiet splash username=akko user-fullname=Akko hostname=akkos overlay-size=75%"
 APPEND+=" locales=pt_BR.UTF-8 keyboard-layouts=br timezone=America/Sao_Paulo"
 APPEND+=" init_on_alloc=1 slab_nomerge page_alloc.shuffle=1"
 

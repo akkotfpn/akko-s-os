@@ -122,6 +122,7 @@ pkill -x calamares 2>/dev/null; sleep 2
 asu bash -c "akko-persistencia >/tmp/akko-persist.log 2>&1" &
 for i in $(seq 1 15); do asu wmctrl -l 2>/dev/null | grep -q 'Guardar alterações' && break; sleep 1; done
 check janela_persistencia bash -c "asu wmctrl -l | grep 'Guardar alterações' || { tail -20 /tmp/akko-persist.log; false; }"
+sleep 3
 shot 05e-guardar-alteracoes
 asu wmctrl -c 'Guardar alterações' 2>/dev/null
 
@@ -178,9 +179,9 @@ asu timeout 600 win-launcher --modo app --sem-tela "$QB" /S >/tmp/qb.log 2>&1
 check qbittorrent_instalado bash -c "ls -la '$PFX/drive_c/Program Files/qBittorrent/qbittorrent.exe' || { tail -15 /tmp/qb.log; tail -25 \$(ls -t /home/$U/.local/share/akkos/wine/logs/qbittorrent*.log | head -1); df -h /home/$U; false; }"
 check espaco_depois bash -c "df -h /home/$U | tail -1 | tr -s ' '"
 asu win-launcher --modo app "$PFX/drive_c/Program Files/qBittorrent/qbittorrent.exe" >/dev/null 2>&1 &
-for i in $(seq 1 60); do asu wmctrl -l 2>/dev/null | grep -qi 'qbittorrent' && break; sleep 1; done
+for i in $(seq 1 150); do asu wmctrl -l 2>/dev/null | grep -qi 'qbittorrent' && break; sleep 1; done
 sleep 5
-check janela_qbittorrent asu bash -c "wmctrl -l | grep -i qbittorrent"
+check janela_qbittorrent bash -c "asu wmctrl -l | grep -i qbittorrent || { tail -25 \$(ls -t /home/$U/.local/share/akkos/wine/logs/qbittorrent-*.log | head -1); df -h /home/$U; free -m; false; }"
 shot 07b-qbittorrent
 asu bash -c "WINEPREFIX='$PFX' wineserver -k" 2>/dev/null
 sleep 3
