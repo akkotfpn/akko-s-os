@@ -139,16 +139,23 @@ class VM:
 
 
 def extrair_da_iso(iso, destino):
+    """Lê o grub.cfg da ISO e extrai exatamente o kernel e o initrd que a
+    entrada principal do menu usa (o live-build põe a versão no nome)."""
     os.makedirs(destino, exist_ok=True)
-    for interno in ("/live/vmlinuz", "/live/initrd.img", "/boot/grub/grub.cfg"):
-        alvo = os.path.join(destino, os.path.basename(interno))
+
+    def extrair(interno, nome):
+        alvo = os.path.join(destino, nome)
         subprocess.run(["xorriso", "-osirrox", "on", "-indev", iso, "-extract", interno, alvo],
                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    grub = open(os.path.join(destino, "grub.cfg")).read()
-    m = re.search(r'menuentry "Iniciar o Akko\'s OS".*?\n\s*linux\s+(\S+)\s+(.*?)\n', grub, re.S)
+        return alvo
+
+    grub = open(extrair("/boot/grub/grub.cfg", "grub.cfg")).read()
+    m = re.search(r'menuentry "Iniciar o Akko\'s OS".*?\n\s*linux\s+(\S+)\s+(.*?)\n\s*initrd\s+(\S+)', grub, re.S)
     if not m:
-        raise RuntimeError("entrada principal não encontrada no grub.cfg da ISO")
-    return os.path.join(destino, "vmlinuz"), os.path.join(destino, "initrd.img"), m.group(2).strip(), grub
+        raise RuntimeError("entrada principal não encontrada no grub.cfg da ISO:\n" + grub[:1500])
+    kernel, append, initrd = m.group(1), m.group(2).strip(), m.group(3)
+    print(f"kernel {kernel}, initrd {initrd}", flush=True)
+    return extrair(kernel, "vmlinuz"), extrair(initrd, "initrd.img"), append, grub
 
 
 def analisar_audio(caminho):
