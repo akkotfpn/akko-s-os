@@ -13,6 +13,7 @@ on:
       - "editions/debian/**"
       - "branding/**"
       - "tests/debian/**"
+      - "scripts/proxmox/**"
       - ".github/workflows/debian-iso.yml"
   workflow_dispatch:
 
@@ -139,6 +140,40 @@ jobs:
           printf 'run %s, commit %s, %s\n' "${{ github.run_id }}" "${{ github.sha }}" "$(date -u)" > ev/LEIA.txt
           git add ev && git -c user.name=akkos-ci -c user.email=akkos-ci@users.noreply.github.com commit -qm "Evidências: run ${{ github.run_id }}"
           git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" evidencias-debian
+
+      - name: Publicar Release (download direto, sem login)
+        if: success() && (github.ref_name == 'edicao-debian' || github.ref_name == 'main')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # O GitHub limita cada arquivo de Release a 2 GB: a ISO vai em partes
+          # (o scripts/proxmox/akkos-vm.sh junta e confere o SHA-256).
+          R=$RUNNER_TEMP/release && rm -rf "$R" && mkdir -p "$R"
+          iso=$(ls "$W"/saida/*.iso | head -1)
+          N=akkos-debian-amd64.iso
+          split -b 1900M -d -a 1 "$iso" "$R/$N.part"
+          (cd "$(dirname "$iso")" && sha256sum "$(basename "$iso")") | awk -v n="$N" '{print $1"  "n}' > "$R/$N.sha256"
+          echo "$AKKOS_VERSAO" > "$R/VERSAO"
+          cp scripts/proxmox/akkos-vm.sh "$R/"
+          ls -la "$R"
+          TAG=debian-ultima
+          gh release delete "$TAG" -R "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          printf '%s\n' \
+            "Akko's OS — edição Debian, versão $AKKOS_VERSAO (commit ${GITHUB_SHA::7}), aprovada no teste automatizado." \
+            "" \
+            "**Proxmox, um comando** (baixa, confere e cria a VM pronta):" \
+            '```' \
+            "bash <(curl -fsSL https://raw.githubusercontent.com/$GITHUB_REPOSITORY/${GITHUB_REF_NAME}/scripts/proxmox/akkos-vm.sh)" \
+            '```' \
+            "" \
+            "**Só a ISO** (Linux/macOS): baixe as partes e junte: \`cat $N.part* > $N && sha256sum -c $N.sha256\`" \
+            "" \
+            "**Windows (PowerShell)**: \`cmd /c copy /b $N.part0+$N.part1 $N\` e confira com \`Get-FileHash $N\`." \
+            > "$R/notas.md"
+          gh release create "$TAG" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+            --title "Akko's OS (Debian) $AKKOS_VERSAO" --notes-file "$R/notas.md" \
+            "$R"/$N.part* "$R/$N.sha256" "$R/VERSAO" "$R/akkos-vm.sh"
+          echo "::notice title=Release publicada::https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
 
       - name: Enviar a ISO
         if: success() || failure()

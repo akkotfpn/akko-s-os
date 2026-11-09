@@ -232,6 +232,25 @@ docker run --rm --privileged -v "$PWD:/repo" debian:trixie bash -c '
 A ISO sai em `editions/debian/saida/akkos-debian-<versão>-amd64.iso`
 (precisa de ~20 GB livres e internet; leva de 30 a 60 minutos).
 
+## Baixar
+
+A cada build aprovado o CI publica a Release **debian-ultima** (pública, sem
+login): https://github.com/akkotfpn/akko-s-os/releases/tag/debian-ultima
+
+**Proxmox — um comando** no shell do Proxmox (como root): baixa a ISO, confere
+o SHA-256 e cria a VM pronta (UEFI, q35, VirtIO, 4 GB, 2 núcleos, disco de
+32 GB) e liga:
+```sh
+bash <(curl -fsSL https://raw.githubusercontent.com/akkotfpn/akko-s-os/edicao-debian/scripts/proxmox/akkos-vm.sh)
+```
+Opções: `--memoria 8192 --cpus 4 --disco 64 --persistencia 16 --storage local-zfs
+--ponte vmbr1 --id 150 --bios seabios --nao-iniciar --so-baixar` (`--help`).
+
+**Só a ISO**: a Release tem a ISO em partes (limite de 2 GB por arquivo do
+GitHub): `cat akkos-debian-amd64.iso.part* > akkos-debian-amd64.iso &&
+sha256sum -c akkos-debian-amd64.iso.sha256` (Windows: `copy /b
+akkos-debian-amd64.iso.part0+akkos-debian-amd64.iso.part1 akkos-debian-amd64.iso`).
+
 ## Testar
 
 **QEMU (UEFI):**
