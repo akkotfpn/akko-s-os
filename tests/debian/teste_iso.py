@@ -199,9 +199,23 @@ def testar_firewall_de_fora(porta):
 
 
 def boot_funcional(iso, saida, resultado):
-    kernel, initrd, append, grub = extrair_da_iso(iso, os.path.join(saida, ".iso"))
+    # Boota pelo GRUB da própria ISO (caminho real), numa cópia em que só o
+    # grub.cfg muda: a entrada principal ganha akkos.teste=1 e o console serial.
+    # (-kernel/-initrd do QEMU não serve: o live-boot não acha a mídia assim.)
+    _, _, append, grub = extrair_da_iso(iso, os.path.join(saida, ".iso"))
     resultado["grub_cfg_entradas"] = re.findall(r'menuentry "([^"]+)"', grub)
-    append = f"{append} akkos.teste=1 console=tty0 console=ttyS0,115200"
+    extra = "akkos.teste=1 console=tty0 console=ttyS0,115200"
+    m = re.search(r'(menuentry "Iniciar o Akko\'s OS".*?\n\s*linux\s+[^\n]*)', grub, re.S)
+    grub_teste = grub[:m.end()] + " " + extra + grub[m.end():]
+    cfg = os.path.join(saida, ".iso", "grub-teste.cfg")
+    open(cfg, "w").write(grub_teste)
+    iso_teste = os.path.join(saida, ".teste.iso")
+    if os.path.exists(iso_teste):
+        os.remove(iso_teste)
+    subprocess.run(["xorriso", "-indev", iso, "-outdev", iso_teste, "-boot_image", "any", "replay",
+                    "-map", cfg, "/boot/grub/grub.cfg"],
+                   check=True, stdout=subprocess.DEVNULL)
+    print(f"ISO de teste: {iso_teste} (entrada principal + '{extra}')", flush=True)
     audio = os.path.join(saida, ".audio-funcional.wav")
     vars_ = os.path.join(saida, ".vars-funcional.fd")
     shutil.copy(OVMF_VARS, vars_)
@@ -209,8 +223,7 @@ def boot_funcional(iso, saida, resultado):
         "-machine", "q35", *KVM, "-smp", "4", "-m", "6144",
         "-drive", f"if=pflash,format=raw,readonly=on,file={OVMF_CODE}",
         "-drive", f"if=pflash,format=raw,file={vars_}",
-        "-kernel", kernel, "-initrd", initrd, "-append", append,
-        "-drive", f"file={iso},media=cdrom,readonly=on",
+        "-drive", f"file={iso_teste},media=cdrom,readonly=on", "-boot", "d",
         "-vga", "std",
         "-netdev", "user,id=n0,hostfwd=tcp:127.0.0.1:18080-:8080", "-device", "virtio-net-pci,netdev=n0",
         "-audiodev", f"wav,id=a0,path={audio}", "-device", "ich9-intel-hda", "-device", "hda-output,audiodev=a0",
@@ -252,6 +265,10 @@ def boot_funcional(iso, saida, resultado):
             break
         vm.ler(0.5)
     vm.encerrar()
+    try:
+        os.remove(iso_teste)
+    except OSError:
+        pass
     checks["audio_gravado"] = analisar_audio(audio)
     resultado["etapas"]["funcional"] = {"ok": fim, "detalhe": f"{tempo / 60:.1f} min; teste {'concluído' if fim else 'NÃO terminou'}"}
     resultado["verificacoes"].update(checks)
