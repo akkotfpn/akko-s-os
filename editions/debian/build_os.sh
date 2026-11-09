@@ -127,6 +127,20 @@ mkdir -p "$INC/usr/lib/akkos/umu" "$INC/usr/bin"
 tar -xf "$UMU_TAR" -C "$INC/usr/lib/akkos/umu" --strip-components=1 umu/umu-run
 chmod 755 "$INC/usr/lib/akkos/umu/umu-run"
 ln -sf /usr/lib/akkos/umu/umu-run "$INC/usr/bin/umu-run"
+
+# ICU do Windows para o Wine (icu/icuuc/icuin.dll, 64 e 32 bits): o Wine ainda
+# não tem e programas novos exigem (ex.: qBittorrent 5). Build da comunidade
+# FaithLife (fork do ICU da Microsoft, licença ICU/Unicode), versão e hash fixos.
+ICU_TAG=75.1
+ICU_SHA256=63a6e66d8b80f57a96b4421da3b431a834265974279dd12888a8578d418ae3e3
+echo "-- ICU do Windows $ICU_TAG para o Wine"
+ICU_TAR="$TRAB/icu-win-$ICU_TAG.tar.gz"
+[ -f "$ICU_TAR" ] || curl -fsSL --retry 4 -o "$ICU_TAR" \
+    "https://github.com/FaithLife-Community/icu/releases/download/$ICU_TAG/icu-win.tar.gz"
+echo "$ICU_SHA256  $ICU_TAR" | sha256sum -c --quiet - || erro "hash do ICU não confere"
+mkdir -p "$INC/usr/share/akkos/wine-icu"
+tar -xzf "$ICU_TAR" -C "$INC/usr/share/akkos/wine-icu" --strip-components=1 --no-same-owner -m windows/
+ls "$INC/usr/share/akkos/wine-icu/system32/icuuc.dll" "$INC/usr/share/akkos/wine-icu/syswow64/icuuc.dll" "$INC/usr/share/akkos/wine-icu/globalization/ICU/icudtl.dat"
 echo "$VERSAO" > "$INC/usr/share/akkos/versao"
 
 echo "-- sintetizando a identidade sonora"

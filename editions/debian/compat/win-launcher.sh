@@ -141,6 +141,29 @@ ativar_dxvk() {
     fi
 }
 
+# ICU do Windows (icu.dll, icuuc.dll, icuin.dll): o Windows 10/11 traz e
+# programas novos (qBittorrent 5, apps com Qt 6.7+ ou C++20 <chrono>) exigem;
+# o Wine ainda não tem (bug 53354). Usamos o build do ICU da comunidade
+# FaithLife (fork do ICU da Microsoft) feito para o Wine, 64 e 32 bits.
+ICU_DIR=/usr/share/akkos/wine-icu
+garantir_icu() {   # garantir_icu PREFIXO [--sem-registro]  (Proton: sem registro)
+    local pfx=$1 w="$1/drive_c/windows" d
+    [ -d "$ICU_DIR/system32" ] && [ -d "$w/system32" ] || return 0
+    [ -f "$w/system32/icuuc.dll" ] && [ -f "$pfx/.akkos-icu" ] && return 0
+    cp -f "$ICU_DIR"/system32/*.dll "$w/system32/" 2>/dev/null || return 0
+    [ -d "$w/syswow64" ] && cp -f "$ICU_DIR"/syswow64/*.dll "$w/syswow64/" 2>/dev/null
+    if [ -d "$ICU_DIR/globalization" ]; then
+        mkdir -p "$w/globalization" && cp -rf "$ICU_DIR/globalization/." "$w/globalization/" 2>/dev/null
+    fi
+    # prefere estas DLLs a qualquer versão "de mentira" que o Wine venha a trazer
+    [ "${2:-}" = --sem-registro ] && { date -Iseconds > "$pfx/.akkos-icu"; return 0; }
+    for d in icu icuuc icuin; do
+        WINEPREFIX="$pfx" "$WINE_BIN" reg add 'HKCU\Software\Wine\DllOverrides' /v "$d" /d native,builtin /f \
+            >/dev/null 2>&1
+    done
+    date -Iseconds > "$pfx/.akkos-icu"
+}
+
 criar_prefixo() {   # criar_prefixo NOME [--silencioso]
     local nome=$1 pfx="$PREFIXOS/$1" log
     log="$LOGS/prefixo-$1.log"
@@ -162,6 +185,7 @@ criar_prefixo() {   # criar_prefixo NOME [--silencioso]
     fi
     WINEPREFIX="$pfx" "$WINESERVER_BIN" -w 2>/dev/null
     instalar_fontes "$pfx"
+    garantir_icu "$pfx"
     ativar_dxvk "$pfx" | tee -a "$log"
     # fontes originais da Microsoft, se houver internet (em segundo plano)
     if command -v winetricks >/dev/null; then
@@ -305,6 +329,7 @@ abrir() {
         dialogo erro "Não foi possível preparar o ambiente" "Falha ao criar o ambiente Windows '$prefixo'.\nLog: $LOGS/prefixo-$prefixo.log"
         return 5
     fi
+    garantir_icu "$PREFIXOS/$prefixo"   # ambientes criados antes desta versão
 
     local cmd=()
     case "$extensao" in
@@ -354,6 +379,9 @@ abrir() {
         fi
     fi
     # saída rápida com erro = provavelmente não abriu: explica o que der
+    # dentro do firejail o código de saída do programa pode se perder (sai 0):
+    # DLL ausente (c0000135) também conta como falha
+    if grep -q "c0000135\|err:module:import_dll" "$log" 2>/dev/null && [ $codigo = 0 ]; then codigo=53; fi
     if [ $codigo != 0 ] && [ $((fim - inicio)) -lt 20 ]; then
         dialogo erro "“$nome” não abriu" "O programa fechou com erro (código $codigo).\n\n$(explicar_falha "$log")\nLog completo: $log"
     fi
@@ -405,7 +433,9 @@ abrir_jogo() {   # abrir_jogo ARQUIVO PREFIXO TELA [args…]
     } > "$log"
     local inicio fim codigo
     inicio=$(date +%s)
+    garantir_icu "$pfx" --sem-registro   # só depois que o Proton criou o ambiente
     ( cd "$dir" && WINEPREFIX="$pfx" GAMEID="${GAMEID:-umu-default}" PROTONPATH="${PROTONPATH:-GE-Proton}" \
+        WINEDLLOVERRIDES="icu,icuuc,icuin=n,b${WINEDLLOVERRIDES:+;$WINEDLLOVERRIDES}" \
         "$UMU_BIN" "$arquivo" "$@" ) >>"$log" 2>&1
     codigo=$?
     fim=$(date +%s)

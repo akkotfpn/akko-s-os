@@ -316,7 +316,7 @@ def main():
                     "sysctl", "apparmor", "binfmt_exe", "janela_arquivos", "janela_rede", "janela_navegador",
                     "wine_prefixo", "janela_windows", "umu_launcher", "janela_escolha", "area_de_trabalho", "janela_este_computador",
                     "janela_tarefas", "janela_instalador", "janela_persistencia", "gpu_nvidia_modulo", "zram",
-                    "qbittorrent_instalado", "audio_gravado"]
+                    "qbittorrent_instalado", "wine_icu", "janela_qbittorrent", "audio_gravado"]
     faltando = [c for c in obrigatorias if c not in resultado["verificacoes"]]
     resultado["faltando"] = faltando
     resultado["sucesso"] = (not faltando and all(v["ok"] for v in resultado["etapas"].values())

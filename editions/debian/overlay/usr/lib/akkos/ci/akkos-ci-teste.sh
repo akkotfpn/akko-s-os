@@ -150,6 +150,7 @@ sleep 2
 PFX="/home/$U/.local/share/akkos/wine/prefixos/padrao"
 for i in $(seq 1 240); do [ -f "$PFX/.akkos-criado" ] && break; sleep 1; done
 check wine_prefixo bash -c "ls '$PFX' && cat '$PFX/.akkos-criado' && ls '$PFX/drive_c/windows/Fonts' | head -3"
+check wine_icu bash -c "ls '$PFX/drive_c/windows/system32/icuuc.dll' '$PFX/drive_c/windows/syswow64/icuuc.dll' '$PFX/drive_c/windows/globalization/ICU/icudtl.dat'"
 check wine_dxvk bash -c "ls -l '$PFX/drive_c/windows/system32/d3d11.dll' | grep -o '\-> .*'"
 NOTEPAD="$PFX/drive_c/windows/notepad.exe"
 asu win-launcher --modo app "$NOTEPAD" >/dev/null 2>&1 &

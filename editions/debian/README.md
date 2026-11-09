@@ -183,6 +183,11 @@ textos sem acento (em vez de "?").
   `.msi`/`.bat` são sempre Aplicativo. No Arquivos, o clique direito tem
   "Abrir como aplicativo", "Abrir como jogo" e "Perguntar como abrir…".
   No terminal: `win-launcher --modo app|jogo PROGRAMA.exe`.
+- **ICU do Windows** (`icu.dll`, `icuuc.dll`, `icuin.dll` + dados) em todo
+  ambiente Windows e de jogos: o Windows 10/11 traz e programas novos exigem
+  (ex.: qBittorrent 5, apps Qt 6.7+), mas o Wine ainda não tem (bug 53354 do
+  Wine). Usa o build da comunidade FaithLife (fork do ICU da Microsoft),
+  baixado no build com hash conferido.
 - Comandos: `win-launcher prefixos | criar NOME | configurar NOME |
   remover NOME | associar ARQUIVO NOME | esquecer-modo ARQUIVO`.
 
