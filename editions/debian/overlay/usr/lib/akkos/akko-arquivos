@@ -38,7 +38,7 @@ import gi
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 gi.require_version("GdkPixbuf", "2.0")
-from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango  # noqa: E402
+from gi.repository import Gdk, GdkPixbuf, Gio, GLib, GObject, Gtk, Pango  # noqa: E402
 
 sys.path.insert(0, "/usr/lib/akkos/python")
 import akkos_comum as ak  # noqa: E402
@@ -273,8 +273,8 @@ class Janela(Gtk.ApplicationWindow):
         centro = Gtk.Box()
         painel.pack2(centro, True, False)
 
-        self.modelo = Gtk.ListStore(GdkPixbuf.Pixbuf, str, str, bool, GLib.TYPE_INT64, str, str,
-                                    GLib.TYPE_INT64, str, bool)
+        self.modelo = Gtk.ListStore(GdkPixbuf.Pixbuf, str, str, bool, GObject.TYPE_INT64, str, str,
+                                    GObject.TYPE_INT64, str, bool)
         self.filtro = self.modelo.filter_new()
         self.filtro.set_visible_func(self._visivel)
         self.ordenado = Gtk.TreeModelSort(model=self.filtro)

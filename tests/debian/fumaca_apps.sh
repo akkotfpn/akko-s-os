@@ -56,6 +56,10 @@ abrir() {   # abrir NOME PADRAO_JANELA comando...
         sleep 0.5
     done
     sleep 1.5
+    # interações básicas: navegar e trocar de modo (pega erros em callbacks)
+    if [ $ok = 1 ] && [ -n "${ACOES:-}" ]; then
+        for tecla in $ACOES; do xdotool key --clearmodifiers "$tecla" 2>/dev/null; sleep 0.7; done
+    fi
     import -window root "$SAIDA/$nome.png" 2>/dev/null
     local erro=""
     grep -q "Traceback" "$SAIDA/$nome.log" && erro="erro do Python"
@@ -71,7 +75,7 @@ abrir() {   # abrir NOME PADRAO_JANELA comando...
 }
 
 abrir painel        "Painel"                   /usr/lib/akkos/akko-painel
-abrir arquivos      "Documentos"               /usr/lib/akkos/akko-arquivos "$HOME/Documentos"
+ACOES="Down Down ctrl+2 Down ctrl+h ctrl+1" abrir arquivos "Documentos" /usr/lib/akkos/akko-arquivos "$HOME/Documentos"
 abrir arquivos-home "akko"                     /usr/lib/akkos/akko-arquivos
 abrir rede          "Rede"                     /usr/lib/akkos/akko-rede
 abrir escolha       "Abrir programa Windows"   /usr/lib/akkos/akko-win-escolha jogo.exe jogo
