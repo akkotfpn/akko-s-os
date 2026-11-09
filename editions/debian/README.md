@@ -143,7 +143,7 @@ editions/debian/
   sem redirecionamentos, ASLR máximo (`randomize_va_space=2`, mmap_rnd_bits),
   `dmesg_restrict`, `kptr_restrict=2`, ptrace restrito, BPF sem privilégio
   desligado, proteções de links.
-- **AppArmor** ativo com os perfis extras do Debian (validados no build).
+- **AppArmor** ativo com os perfis que o Debian instala (pacotes e firejail).
 - **Firejail + AppArmor** para o navegador e para os programas Windows
   (pasta pessoal reduzida ao necessário, sem root, seccomp).
 - Core dumps desligados, protocolos de rede raros bloqueados, root sem login.

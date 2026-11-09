@@ -24,8 +24,35 @@ permissions:
   contents: write
 
 jobs:
+  apps:
+    name: Programas gráficos (teste rápido)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Abrir cada programa num Debian 13 com tela virtual
+        run: |
+          mkdir -p "$RUNNER_TEMP/fumaca" && chmod 777 "$RUNNER_TEMP/fumaca"
+          sed -i "s/\r$//" tests/debian/fumaca_apps.sh
+          scripts/ci-run.sh "Programas gráficos" --notice 20 \
+            docker run --rm -v "$PWD:/repo:ro" -v "$RUNNER_TEMP/fumaca:/saida" debian:trixie \
+              bash /repo/tests/debian/fumaca_apps.sh /saida
+
+      - name: Publicar prints (branch evidencias-apps)
+        if: always()
+        run: |
+          E=$(mktemp -d); cd "$E"
+          git init -q && git checkout -q -b evidencias-apps
+          mkdir ev && cp "$RUNNER_TEMP"/fumaca/*.png "$RUNNER_TEMP"/fumaca/*.log ev/ 2>/dev/null || true
+          printf 'run %s, commit %s\n' "${{ github.run_id }}" "${{ github.sha }}" > ev/LEIA.txt
+          git add ev && git -c user.name=akkos-ci -c user.email=akkos-ci@users.noreply.github.com commit -qm "Prints dos programas: run ${{ github.run_id }}"
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" evidencias-apps
+
   iso:
     name: Construir e testar
+    needs: apps
     runs-on: ubuntu-24.04
     timeout-minutes: 300
     steps:

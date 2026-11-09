@@ -24,6 +24,7 @@ asu() {
     runuser -u "$U" -- env DISPLAY=:0 XAUTHORITY="/home/$U/.Xauthority" XDG_RUNTIME_DIR="/run/user/$UIDN" \
         DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$UIDN/bus" HOME="/home/$U" LANG=pt_BR.UTF-8 "$@"
 }
+export -f asu; export U UIDN   # para usar asu dentro de "bash -c"
 sleep 10   # deixa o som de início terminar e a área de trabalho assentar
 shot 01-area-de-trabalho
 
@@ -52,7 +53,7 @@ check dns getent hosts github.com
 check firewall_regras bash -c "nft list ruleset | grep -E 'policy drop|policy accept' | tr -s ' '"
 check firewall_ativo systemctl is-active nftables
 check sysctl bash -c "sysctl -n kernel.kptr_restrict kernel.dmesg_restrict kernel.randomize_va_space net.ipv4.conf.all.rp_filter kernel.unprivileged_bpf_disabled | tr '\n' ' ' | grep -x '2 1 2 1 1 '"
-check apparmor bash -c "aa-status --enabled && aa-status | head -3 && aa-status | grep -c firejail-default"
+check apparmor bash -c "aa-status --enabled && aa-status 2>&1 | head -3 && aa-status | grep -c firejail-default || { systemctl status apparmor --no-pager -l 2>&1 | tail -12; journalctl -b -u apparmor --no-pager 2>&1 | tail -15; false; }"
 check firejail firejail --version
 check root_travado bash -c "passwd -S root | awk '{print \$2}' | grep -x L"
 # firewall de verdade: um servidor escutando; de fora (QEMU) não pode responder
@@ -76,17 +77,17 @@ check navegador_politica python3 -c "import json;print(json.load(open('/etc/chro
 check navegador_sandbox bash -c "readlink -f /usr/local/bin/chromium; grep Exec= /usr/share/applications/akko-navegador.desktop | head -1"
 
 # ---------------------------------------------------------- programas gráficos
-asu akko-arquivos /usr/share/backgrounds/akkos >/dev/null 2>&1 &
-sleep 6
-check janela_arquivos asu bash -c "wmctrl -l | grep -i 'akkos'"
+asu bash -c "akko-arquivos /usr/share/backgrounds/akkos >/tmp/akko-arquivos.log 2>&1" &
+for i in $(seq 1 15); do asu wmctrl -l 2>/dev/null | grep -q ' akkos$' && break; sleep 1; done
+check janela_arquivos bash -c "asu wmctrl -l | grep ' akkos$' || { tail -20 /tmp/akko-arquivos.log; false; }"
 shot 02-explorador
 asu xdotool key ctrl+2 2>/dev/null; sleep 2
 shot 03-explorador-lista
 asu wmctrl -c akkos 2>/dev/null
 
-asu akko-rede >/dev/null 2>&1 &
-sleep 6
-check janela_rede asu bash -c "wmctrl -l | grep -i 'Rede'"
+asu bash -c "akko-rede >/tmp/akko-rede.log 2>&1" &
+for i in $(seq 1 15); do asu wmctrl -l 2>/dev/null | grep -q ' Rede$' && break; sleep 1; done
+check janela_rede bash -c "asu wmctrl -l | grep ' Rede$' || { tail -20 /tmp/akko-rede.log; false; }"
 shot 04-rede
 asu wmctrl -c Rede 2>/dev/null
 
@@ -98,6 +99,7 @@ asu xdotool key Escape 2>/dev/null
 asu akko-navegador >/dev/null 2>&1 &
 sleep 15
 check janela_navegador asu bash -c "wmctrl -lx | grep -i chromium"
+check navegador_pagina_inicial asu bash -c "wmctrl -l | grep \"Akko's OS - Chromium\""
 check navegador_em_sandbox bash -c "firejail --list | grep -i chromium"
 shot 06-navegador
 asu bash -c "wmctrl -lx | awk 'tolower(\$3) ~ /chromium/ {print \$1}' | xargs -r -n1 wmctrl -i -c" 2>/dev/null
@@ -115,6 +117,10 @@ shot 07-windows-notepad
 check janela_windows asu bash -c "wmctrl -lx | grep -i notepad"
 check windows_em_sandbox bash -c "firejail --list | grep -i -E 'wine|notepad'"
 check windows_log bash -c "ls -t /home/$U/.local/share/akkos/wine/logs/ | head -3; tail -4 \$(ls -t /home/$U/.local/share/akkos/wine/logs/notepad-*.log | head -1)"
+# fecha como uma pessoa fecharia (o wineserver -k fazia o lançador acusar erro)
+asu bash -c "wmctrl -c 'Bloco de Notas'" 2>/dev/null
+for i in $(seq 1 15); do asu wmctrl -lx 2>/dev/null | grep -qi notepad || break; sleep 1; done
+check windows_fechou_sem_erro bash -c "! asu wmctrl -l | grep 'não abriu'"
 asu bash -c "WINEPREFIX='$PFX' wineserver -k" 2>/dev/null
 sleep 2
 
@@ -126,7 +132,7 @@ check janela_escolha asu bash -c "wmctrl -l | grep 'Abrir programa Windows'"
 shot 08-escolha-app-jogo
 asu bash -c "wmctrl -c 'Abrir programa Windows'" 2>/dev/null   # fechar = cancelar
 sleep 2
-check escolha_cancelada bash -c "! pgrep -u $U -f akko-win-escolha && ! pgrep -u $U -f 'notepad.exe'"
+check escolha_cancelada bash -c "! pgrep -u $U -f akko-win-escolha && ! pgrep -u $U -f 'wine.*notepad'"
 shot 09-final
 
 echo "AKKOS-TESTE-FIM"

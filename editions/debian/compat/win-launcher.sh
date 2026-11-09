@@ -149,10 +149,16 @@ criar_prefixo() {   # criar_prefixo NOME [--silencioso]
     fi
     echo "Criando ambiente Windows '$nome' em $pfx" | tee -a "$log"
     mkdir -p "$pfx"
-    # sem Mono/Gecko automáticos (pediriam download no meio da criação)
-    if ! WINEPREFIX="$pfx" WINEDLLOVERRIDES="mscoree,mshtml=" "$WINE_BIN" wineboot --init >>"$log" 2>&1; then
-        echo "erro: wineboot falhou (veja $log)" >&2
-        return 1
+    # sem Mono/Gecko automáticos (pediriam download no meio da criação).
+    # Sem tela: assim o Wine não mostra a caixa "configuração sendo
+    # atualizada" (a janela de carregamento do Akko's OS já avisa).
+    if ! env -u DISPLAY -u WAYLAND_DISPLAY WINEPREFIX="$pfx" WINEDLLOVERRIDES="mscoree,mshtml=" \
+            "$WINE_BIN" wineboot --init >>"$log" 2>&1 || [ ! -f "$pfx/system.reg" ]; then
+        echo "aviso: criação sem tela falhou, tentando com tela" >>"$log"
+        if ! WINEPREFIX="$pfx" WINEDLLOVERRIDES="mscoree,mshtml=" "$WINE_BIN" wineboot --init >>"$log" 2>&1; then
+            echo "erro: wineboot falhou (veja $log)" >&2
+            return 1
+        fi
     fi
     WINEPREFIX="$pfx" "$WINESERVER_BIN" -w 2>/dev/null
     instalar_fontes "$pfx"

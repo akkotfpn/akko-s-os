@@ -135,13 +135,14 @@ chmod 0644 /etc/sysctl.d/99-custom-os-security.conf
 # ---------------------------------------------------------------- 3. AppArmor
 log "3/5 AppArmor"
 systemctl enable apparmor.service
-# perfis extras (apparmor-profiles-extra) vêm em /usr/share; os que já estão
-# em /etc/apparmor.d ficam em modo de aplicação (enforce)
+# Só os perfis que o Debian instala em /etc/apparmor.d (pacotes, firejail).
+# Os de /usr/share/apparmor/extra-profiles são experimentais: copiar todos
+# fazia o carregamento falhar e o sistema subia com 0 perfis. Versões
+# anteriores deste script copiavam; remove as cópias idênticas.
 if [ -d /usr/share/apparmor/extra-profiles ]; then
     for p in /usr/share/apparmor/extra-profiles/usr.bin.*; do
-        [ -f "$p" ] || continue
         destino="/etc/apparmor.d/$(basename "$p")"
-        [ -e "$destino" ] || cp "$p" "$destino"
+        [ -f "$destino" ] && cmp -s "$p" "$destino" && rm -f "$destino"
     done
 fi
 # Valida os perfis quando o kernel tem AppArmor (sistema instalado). No build
@@ -187,6 +188,8 @@ echo "# ajustes locais da sandbox do Wine" > /etc/firejail/akkos-wine.local
 cat > /etc/firejail/chromium.local <<'EOF'
 # Akko's OS: navegador também confinado pelo AppArmor
 apparmor
+# a página inicial do Akko's OS (o perfil só libera algumas pastas de /usr/share)
+whitelist /usr/share/akkos
 EOF
 # o navegador abre sempre pela sandbox: /usr/local/bin vem antes no PATH
 ln -sf /usr/bin/firejail /usr/local/bin/chromium
