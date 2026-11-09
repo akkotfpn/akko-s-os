@@ -74,28 +74,32 @@ modo gaming com GPU real, Secure Boot com NVIDIA.
 
 ## Edição Debian
 
-Workflow `.github/workflows/debian-iso.yml`, execução **42560255111**
-(commit do branch `edicao-debian`, 09/11/2026): **aprovada, 49 de 49
-verificações**. Prints e logs no branch `evidencias-debian`.
+Workflow `.github/workflows/debian-iso.yml`, execução **42648306836**
+(09/11/2026): **aprovada, 70 de 70 verificações**, VM com **4 GB de RAM**.
+Prints e logs no branch `evidencias-debian`.
 
 | Área | Verificado no QEMU/KVM |
 |---|---|
-| Boot | GRUB próprio e área de trabalho em UEFI, UEFI com Secure Boot e BIOS; tema Plymouth `akkos` |
-| Sistema | os-release "Akko's OS", pt-BR, sessão `akkos` (Openbox, painel, sons, dunst) |
-| Áudio | PipeWire com saída ativa; `notify`/`click` tocados; 7–8 s de som gravados da VM |
-| Rede | NetworkManager conectado, HTTPS com certificado válido, DNS |
-| Segurança | nftables (entrada bloqueada, conexão de fora sem resposta, log), sysctl, root travado, AppArmor com 134 perfis carregados também no live |
-| Programas | Arquivos (grade/lista), Rede, menu, Chromium com página inicial em firejail |
-| Windows | Wine 10 (64 e 32 bits), DXVK no prefixo, binfmt, Bloco de Notas aberto em firejail **com AppArmor** (`firejail-default (enforce)`), fecha sem erro |
-| Aplicativo/Jogo | janela de escolha aparece e cancela corretamente; umu-launcher 1.4.4 instalado |
+| Boot | GRUB próprio (usar sem instalar / guardando alterações / instalar) e área de trabalho em UEFI, UEFI com Secure Boot e BIOS; Plymouth `akkos` |
+| Sistema | os-release "Akko's OS", pt-BR, sessão própria; área de trabalho com ícones (Este Computador, Lixeira, Instalar, atalhos) |
+| Programas | Explorador estilo Windows (Este Computador, C:, Novo ▾), Rede, menu, Gerenciador de Tarefas (Desempenho), Chromium com página inicial em firejail |
+| Instalador | Calamares com a marca do Akko's OS abre (a VM de teste não tem disco: instalação em si não testada) |
+| Persistência | ferramenta "Guardar alterações" abre e lista discos |
+| Áudio | PipeWire, sons do sistema, som gravado da VM |
+| Rede | NetworkManager, HTTPS com certificado válido, DNS |
+| Segurança | nftables (entrada bloqueada e registrada), sysctl, root travado, AppArmor com 134 perfis também no live; Wine confinado (`firejail-default (enforce)`) |
+| Vídeo | Mesa 26.1 (64 e 32 bits), módulo NVIDIA 550 compilado + bibliotecas 32 bits, `akkos-gpu` ativo, zram |
+| Windows | Wine 10, DXVK, ICU do Windows no ambiente; Bloco de Notas; **qBittorrent 5.3.0 baixado, instalado (NSIS silencioso) e aberto** na sandbox |
+| Aplicativo/Jogo | janela de escolha; umu-launcher 1.4.4 instalado |
 
-Teste rápido (job `apps`, ~4 min): painel, Arquivos com navegação e troca de
-modos, Rede, janela de escolha e tela de carregamento num Debian 13 com Xvfb.
+Teste rápido (job `apps`): painel, área de trabalho, Arquivos (criar pasta
+com Ctrl+Shift+N, Este Computador), Gerenciador de Tarefas, Guardar
+alterações, Rede, escolha e tela de carregamento num Debian 13 com Xvfb.
 
-**Não verificado:** jogo de verdade pelo Proton (precisa de GPU real com
-Vulkan e internet para baixar ~1 GB), Wi-Fi físico, instalação em disco
-(a edição ainda não tem instalador).
+**Não verificado:** instalação em disco pelo Calamares (falta disco na VM
+de teste), boot com persistência, jogo real pelo Proton e placas NVIDIA/AMD/
+Intel reais (precisam de hardware), Wi-Fi físico.
 
-**Limite conhecido:** o perfil AppArmor do firejail bloqueia `userns_create`,
-que a sandbox do próprio Chromium usa; por isso o navegador roda no firejail
-sem AppArmor (diagnóstico `diag_chromium_apparmor` no teste).
+**Limites conhecidos:** kernel 6.12 (o driver NVIDIA 550 não compila no 7.x
+dos backports); RTX 50 e GTX 600/700 usam o nouveau; o Chromium roda no
+firejail sem AppArmor (o perfil bloqueia `userns_create`).
