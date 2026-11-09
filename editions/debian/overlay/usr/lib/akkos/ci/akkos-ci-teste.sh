@@ -101,7 +101,8 @@ sleep 15
 check janela_navegador asu bash -c "wmctrl -lx | grep -i chromium"
 check navegador_pagina_inicial asu bash -c "wmctrl -l | grep \"Akko's OS - Chromium\""
 check navegador_em_sandbox bash -c "firejail --list | grep -i chromium"
-check navegador_apparmor bash -c "for p in \$(pgrep -u $U -f chromium); do cat /proc/\$p/attr/current 2>/dev/null; echo; done | sort -u | grep -m3 firejail-default"
+# diagnóstico (não reprova): o Chromium abriria com o AppArmor do firejail?
+check diag_chromium_apparmor bash -c "asu timeout 40 firejail --quiet --profile=chromium --apparmor /usr/bin/chromium --headless=new --disable-gpu --dump-dom file:///usr/share/akkos/inicio/index.html 2>&1 | grep -v '^ *$' | tail -6 | cut -c1-200; echo \"rc=\${PIPESTATUS[0]}\"; journalctl -k --no-pager 2>/dev/null | grep -a 'apparmor=\"DENIED\"' | tail -8 | sed -E 's/.*(operation=[^ ]+).*(profile=[^ ]+).*(name=[^ ]+).*/\1 \2 \3/'; true"
 shot 06-navegador
 asu bash -c "wmctrl -lx | awk 'tolower(\$3) ~ /chromium/ {print \$1}' | xargs -r -n1 wmctrl -i -c" 2>/dev/null
 sleep 2

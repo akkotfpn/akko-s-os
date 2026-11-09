@@ -186,8 +186,11 @@ apparmor
 EOF
 echo "# ajustes locais da sandbox do Wine" > /etc/firejail/akkos-wine.local
 cat > /etc/firejail/chromium.local <<'EOF'
-# Akko's OS: navegador também confinado pelo AppArmor
-apparmor
+# Akko's OS: o Chromium roda no firejail (seccomp, sem novos privilégios,
+# pasta pessoal restrita) e na sandbox própria dele. O perfil AppArmor do
+# firejail impede o Chromium de abrir no sistema live (testado no CI), então
+# fica desligado só para o navegador; o Wine continua com AppArmor.
+ignore apparmor
 # a página inicial do Akko's OS (o perfil só libera algumas pastas de /usr/share)
 whitelist /usr/share/akkos
 EOF
