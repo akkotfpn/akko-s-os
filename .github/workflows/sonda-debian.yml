@@ -1,0 +1,40 @@
+name: Sonda Debian (temporária)
+on:
+  push:
+    branches: [sonda-debian]
+permissions:
+  contents: write
+jobs:
+  sonda:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Coletar informações dentro do Debian 13
+        run: |
+          mkdir -p saida
+          docker run --rm -v "$PWD/saida:/saida" debian:trixie bash -c '
+            set -x
+            sed -i "s/Components: main/Components: main contrib non-free non-free-firmware/" /etc/apt/sources.list.d/debian.sources
+            dpkg --add-architecture i386
+            apt-get update -qq
+            apt-get install -y -qq live-build >/dev/null
+            dpkg -l live-build | tail -1 > /saida/live-build-versao.txt
+            cd /usr/share/live/build/bootloaders && find . -type f | sort > /saida/bootloaders-arquivos.txt
+            for f in $(find grub-pc -type f -name "*.cfg" -o -type f -name "*.txt" | sort); do echo "===== $f"; cat "$f"; done > /saida/grub-pc-conteudo.txt 2>&1
+            ls /usr/lib/live/build/ > /saida/lb-scripts.txt
+            for p in wine wine64 wine32:i386 libwine dxvk dxvk-wine64 dxvk-wine32:i386 winetricks firejail firejail-profiles chromium fonts-inter fonts-noto-core papirus-icon-theme libfuse2t64 python3-gi gir1.2-gtk-3.0 gir1.2-wnck-3.0 gir1.2-nm-1.0 gir1.2-gtklayershell-0.1 openbox obconf lightdm lightdm-gtk-greeter dunst feh xfce4-terminal mousepad ristretto pipewire pipewire-pulse pipewire-alsa wireplumber pipewire-bin plymouth plymouth-themes plymouth-label nftables apparmor apparmor-utils apparmor-profiles apparmor-profiles-extra calamares calamares-settings-debian shim-signed grub-efi-amd64-signed gvfs gvfs-backends udisks2 network-manager wpasupplicant firmware-iwlwifi firmware-realtek firmware-atheros firmware-misc-nonfree firmware-brcm80211 firmware-linux-free amd64-microcode intel-microcode flatpak xdg-utils xserver-xorg xinit x11-xserver-utils python3-numpy policykit-1 polkitd lxpolkit pkexec network-manager-gnome gnome-keyring adwaita-icon-theme xdotool wmctrl live-config live-boot; do
+              v=$(apt-cache policy "$p" 2>/dev/null | awk "/Candidate/ {print \$2}")
+              printf "%-32s %s\n" "$p" "${v:-AUSENTE}"
+            done > /saida/pacotes.txt
+            cd /tmp && apt-get download -qq dxvk-wine64 dxvk 2>/dev/null; for d in *.deb; do echo "===== $d"; dpkg -c "$d" | awk "{print \$6}"; done > /saida/dxvk-arquivos.txt 2>&1
+            apt-get download -qq wine 2>/dev/null; for d in wine_*.deb; do dpkg -c "$d" | awk "{print \$6}"; done > /saida/wine-arquivos.txt 2>&1
+            apt-get download -qq firejail-profiles firejail 2>/dev/null; for d in firejail*.deb; do dpkg -c "$d" | awk "{print \$6}" | grep -E "wine|chromium|apparmor|firecfg" ; done > /saida/firejail-arquivos.txt 2>&1
+            cat /usr/share/live/build/VERSION 2>/dev/null >> /saida/live-build-versao.txt
+          '
+          ls -la saida
+      - name: Publicar no branch sonda-saida
+        run: |
+          git config user.name "akkos-ci"; git config user.email "akkos-ci@users.noreply.github.com"
+          git checkout --orphan sonda-saida
+          git rm -rq --cached . ; find . -mindepth 1 -maxdepth 1 ! -name saida ! -name .git -exec rm -rf {} +
+          git add saida && git commit -qm "Sonda Debian: $(date -u)" && git push -f origin sonda-saida
