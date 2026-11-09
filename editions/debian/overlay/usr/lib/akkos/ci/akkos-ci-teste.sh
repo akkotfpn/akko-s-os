@@ -182,15 +182,15 @@ QBEXE="$PFX/drive_c/Program Files/qBittorrent/qbittorrent.exe"
 asu env WINEDEBUG=err+all,fixme-all win-launcher --modo app "$QBEXE" >/dev/null 2>&1 &
 for i in $(seq 1 120); do asu wmctrl -l 2>/dev/null | grep -qiE 'qbittorrent|aviso legal|legal notice' && break; sleep 1; done
 sleep 5
-check diag_qbittorrent_sandbox bash -c "asu wmctrl -l | tail -4; ps -u $U -o pid,stat,etime,rss,args | grep -iE 'wine|qbit|firejail' | grep -v grep | cut -c1-160 | head -12; tail -15 \$(ls -t /home/$U/.local/share/akkos/wine/logs/qbittorrent-*.log | head -1); true"
+check diag_qbittorrent_sandbox bash -c "L=\$(ls -t /home/$U/.local/share/akkos/wine/logs/qbittorrent-*.log | head -1); grep -E 'saiu com|err:module|not found|Error|rror:|firejail|cannot|denied' \$L | grep -v '^comando' | sort -u | head -8; pgrep -u $U -fa qbittorrent | cut -c1-80; true"
 if ! asu wmctrl -l 2>/dev/null | grep -qiE 'qbittorrent|aviso legal|legal notice'; then
     asu bash -c "WINEPREFIX='$PFX' wineserver -k" 2>/dev/null; sleep 3
     asu env WINEDEBUG=err+all,fixme-all win-launcher --modo app --sem-sandbox "$QBEXE" >/dev/null 2>&1 &
     for i in $(seq 1 120); do asu wmctrl -l 2>/dev/null | grep -qiE 'qbittorrent|aviso legal|legal notice' && break; sleep 1; done
     sleep 5
-    check diag_qbittorrent_sem_sandbox bash -c "asu wmctrl -l | tail -4; ps -u $U -o pid,stat,etime,rss,args | grep -iE 'wine|qbit' | grep -v grep | cut -c1-160 | head -12; tail -15 \$(ls -t /home/$U/.local/share/akkos/wine/logs/qbittorrent-*.log | head -1); true"
+    check diag_qbittorrent_sem_sandbox bash -c "L=\$(ls -t /home/$U/.local/share/akkos/wine/logs/qbittorrent-*.log | head -1); grep -E 'saiu com|err:module|not found' \$L | sed 's/^.*err:module:[a-z_]* //' | sort -u | head -8; true"
 fi
-check janela_qbittorrent bash -c "asu wmctrl -l | grep -iE 'qbittorrent|aviso legal|legal notice'"
+check janela_qbittorrent bash -c "asu wmctrl -l | grep -v 'não abriu' | grep -iE 'qbittorrent|aviso legal|legal notice'"
 shot 07b-qbittorrent
 asu bash -c "WINEPREFIX='$PFX' wineserver -k" 2>/dev/null
 sleep 3
